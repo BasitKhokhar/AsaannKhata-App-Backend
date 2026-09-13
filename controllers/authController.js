@@ -39,7 +39,10 @@ exports.register = async (req, res) => {
 
         const { admin, shop } = await prisma.$transaction(async (tx) => {
             const admin = await tx.admin.create({
-                data: { name, email, password: hashed, phone: phone || null },
+                // adCoins: 10 mirrors the Admin.adCoins schema default — set
+                // explicitly here so the starter grant is obvious at the call
+                // site rather than relying only on the column default.
+                data: { name, email, password: hashed, phone: phone || null, adCoins: 10 },
             });
 
             const shop = await tx.shop.create({

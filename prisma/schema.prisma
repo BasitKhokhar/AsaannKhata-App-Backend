@@ -82,8 +82,17 @@ model Admin {
   refreshToken String?
   isActive     Boolean @default(true) // superadmin suspension switch
 
-  shops         Shop[]
-  subscriptions UserSubscription[]
+  // Ads + reward-coins economy — lets a FREE_TRIAL/non-cloud admin earn a
+  // short-lived cloud-sync unlock by watching reward ads instead of paying.
+  // Coins live on Admin (not Shop) since they're spent/earned per tenant
+  // owner, shared across every shop that admin runs.
+  adCoins             Int       @default(10) // new admins start with 10, mirrors this app's own "starter" pattern
+  syncUnlockExpiresAt DateTime? // while unexpired, requireSyncQuota lets a free-tier admin push-sync
+
+  shops               Shop[]
+  subscriptions       UserSubscription[]
+  adCoinTransactions  AdCoinTransaction[]
+  notifications       Notification[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -130,13 +139,15 @@ model Shop {
   admin    Admin    @relation(fields: [adminId], references: [id])
   shopType ShopType @relation(fields: [shopTypeId], references: [id])
 
-  categories       Category[]
-  products         Product[]
-  bills            Bill[]
-  stockLogs        StockTransaction[]
-  devices          Device[]
-  customers        Customer[]
-  customerPayments CustomerPayment[]
+  categories         Category[]
+  products           Product[]
+  bills              Bill[]
+  stockLogs          StockTransaction[]
+  devices            Device[]
+  customers          Customer[]
+  customerPayments   CustomerPayment[]
+  adCoinTransactions AdCoinTransaction[]
+  notifications      Notification[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -357,6 +368,7 @@ model Device {
   isActive   Boolean   @default(true)
   lastSeenAt DateTime  @default(now())
   lastSyncAt DateTime?
+  fcmToken   String? // FCM registration token for push notifications; self-healed (cleared) on delivery failure
 
   shop Shop @relation(fields: [shopId], references: [id])
 
@@ -533,4 +545,52 @@ model SubscriptionPayment {
 
   @@index([subscriptionId])
   @@index([transactionId])
+}
+
+//////////////////////////////////////////////////////
+// ADS + REWARD COINS ECONOMY
+//////////////////////////////////////////////////////
+
+// Append-only ledger of every coin earn/spend event, mirroring
+// StockTransaction/CustomerPayment's append-only shape. `amount` is signed
+// (positive earn, negative spend) and `balanceAfter` snapshots Admin.adCoins
+// right after this row was applied, so the running balance is always
+// reconstructable/auditable straight from this table.
+model AdCoinTransaction {
+  id           Int      @id @default(autoincrement())
+  shopId       Int
+  adminId      Int
+  type         String // "EARNED_AD" | "SPENT_SYNC" | "SPENT_BILL"
+  amount       Int // positive for earn, negative for spend
+  balanceAfter Int
+  clientId     String? // idempotency key for offline-created rows, same convention as other synced tables
+
+  createdAt DateTime @default(now())
+
+  shop  Shop  @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, clientId])
+  @@index([shopId, type, createdAt])
+}
+
+//////////////////////////////////////////////////////
+// PUSH NOTIFICATIONS (Firebase Cloud Messaging)
+//////////////////////////////////////////////////////
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  shopId    Int
+  adminId   Int
+  title     String
+  message   String
+  type      String?
+  data      Json?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  shop  Shop  @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([shopId, adminId, isRead])
 }

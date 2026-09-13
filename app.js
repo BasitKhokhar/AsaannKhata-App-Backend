@@ -16,6 +16,8 @@ const subscriptionRoutes = require('./routes/subscriptionRoutes');
 const superAdminRoutes = require('./routes/superAdminRoutes');
 const webhookRoutes = require('./routes/webhookRoutes');
 const syncRoutes = require('./routes/syncRoutes');
+const adsRoutes = require('./routes/adsRoutes');
+const notificationsRoutes = require('./routes/notificationsRoutes');
 
 const app = express();
 app.use(cors());
@@ -36,6 +38,8 @@ app.use('/subscriptions', subscriptionRoutes);
 app.use('/superadmin', superAdminRoutes);
 app.use('/webhooks', webhookRoutes);
 app.use('/sync', syncRoutes);
+app.use('/ads', adsRoutes);
+app.use('/notifications', notificationsRoutes);
 
 app.get('/', (req, res) => res.send("Hamdan Glass POS Backend by Basit Tech Solutions is live"));
 
