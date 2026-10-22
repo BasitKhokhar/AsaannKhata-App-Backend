@@ -39,38 +39,65 @@ async function registerDevice(tenant, { deviceId, deviceName, platform }, maxDev
 // ----------------------------------------------------------------------------
 
 async function pullChanges(tenant, sinceIso) {
-    const since = sinceIso ? new Date(sinceIso) : new Date(0);
-    const serverTime = new Date();
-
-    const [categories, products, bills, stockTransactions, customers, customerPayments] = await Promise.all([
-        prisma.category.findMany({ where: { shopId: tenant.shopId, updatedAt: { gt: since } }, orderBy: { updatedAt: 'asc' }, take: PAGE_SIZE }),
-        prisma.product.findMany({ where: { shopId: tenant.shopId, updatedAt: { gt: since } }, orderBy: { updatedAt: 'asc' }, take: PAGE_SIZE }),
-        prisma.bill.findMany({ where: { shopId: tenant.shopId, updatedAt: { gt: since } }, include: { items: true }, orderBy: { updatedAt: 'asc' }, take: PAGE_SIZE }),
-        prisma.stockTransaction.findMany({ where: { shopId: tenant.shopId, createdAt: { gt: since } }, orderBy: { createdAt: 'asc' }, take: PAGE_SIZE }),
-        prisma.customer.findMany({ where: { shopId: tenant.shopId, updatedAt: { gt: since } }, orderBy: { updatedAt: 'asc' }, take: PAGE_SIZE }),
-        prisma.customerPayment.findMany({ where: { shopId: tenant.shopId, createdAt: { gt: since } }, orderBy: { createdAt: 'asc' }, take: PAGE_SIZE }),
-    ]);
-
-    const hasMore = [categories, products, bills, stockTransactions, customers, customerPayments].some((rows) => rows.length === PAGE_SIZE);
-
-    // If any table filled its page, the client should re-pull starting from
-    // the oldest un-returned row rather than jumping straight to serverTime.
-    const watermarks = [categories, products, bills, customers].flatMap((rows) => rows.map((r) => r.updatedAt));
-    [stockTransactions, customerPayments].forEach((rows) => rows.forEach((r) => watermarks.push(r.createdAt)));
-    const nextSince = hasMore && watermarks.length
-        ? new Date(Math.min(...watermarks.map((d) => d.getTime()))).toISOString()
-        : serverTime.toISOString();
+    // A paginated cursor must include the row ID: timestamps are not unique.
+    // Keep one position per table so a busy table cannot skip a quieter one.
+    let state;
+    try {
+        state = sinceIso && sinceIso.startsWith('{') ? JSON.parse(sinceIso) : null;
+    } catch (_err) {
+        throw new Error('Invalid sync cursor');
+    }
+    const since = state ? new Date(state.since) : sinceIso ? new Date(sinceIso) : new Date(0);
+    const snapshot = state ? new Date(state.snapshot) : new Date();
+    if (Number.isNaN(since.getTime()) || Number.isNaN(snapshot.getTime())) {
+        throw new Error('Invalid sync cursor');
+    }
+    const positions = state?.positions || {};
+    const specs = [
+        ['categories', prisma.category, 'updatedAt'],
+        ['products', prisma.product, 'updatedAt'],
+        ['bills', prisma.bill, 'updatedAt'],
+        ['stockTransactions', prisma.stockTransaction, 'createdAt'],
+        ['customers', prisma.customer, 'updatedAt'],
+        ['customerPayments', prisma.customerPayment, 'createdAt'],
+    ];
+    const pages = await Promise.all(specs.map(async ([name, model, field]) => {
+        const position = positions[name];
+        const after = position ? new Date(position.time) : since;
+        if (Number.isNaN(after.getTime())) throw new Error('Invalid sync cursor');
+        const where = {
+            shopId: tenant.shopId,
+            [field]: { lte: snapshot },
+            OR: position
+                ? [{ [field]: { gt: after } }, { [field]: after, id: { gt: position.id } }]
+                : [{ [field]: { gt: since } }],
+        };
+        const rows = await model.findMany({
+            where,
+            ...(name === 'bills' ? { include: { items: true } } : {}),
+            orderBy: [{ [field]: 'asc' }, { id: 'asc' }],
+            take: PAGE_SIZE + 1,
+        });
+        return [name, field, rows];
+    }));
+    const result = {};
+    const nextPositions = { ...positions };
+    let hasMore = false;
+    for (const [name, field, rows] of pages) {
+        if (rows.length > PAGE_SIZE) hasMore = true;
+        result[name] = rows.slice(0, PAGE_SIZE);
+        const last = result[name].at(-1);
+        if (last) nextPositions[name] = { time: last[field].toISOString(), id: last.id };
+    }
+    const nextSince = hasMore
+        ? JSON.stringify({ since: since.toISOString(), snapshot: snapshot.toISOString(), positions: nextPositions })
+        : snapshot.toISOString();
 
     return {
-        serverTime: serverTime.toISOString(),
+        serverTime: snapshot.toISOString(),
         nextSince,
         hasMore,
-        categories,
-        products,
-        bills,
-        stockTransactions,
-        customers,
-        customerPayments,
+        ...result,
     };
 }
 

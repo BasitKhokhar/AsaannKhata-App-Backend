@@ -49,6 +49,25 @@ exports.superAdminRefresh = async (req, res) => {
     }
 };
 
+exports.updateSuperAdminPassword = async (req, res) => {
+    const { currentPassword, newPassword } = req.body || {};
+    if (typeof currentPassword !== 'string' || typeof newPassword !== 'string' || newPassword.length < 12 || newPassword.length > 128) {
+        return res.status(400).json({ message: 'Current password and a new password of 12–128 characters are required' });
+    }
+    try {
+        const account = await prisma.superAdmin.findUnique({ where: { id: req.superAdmin.id } });
+        if (!account || !(await bcrypt.compare(currentPassword, account.password))) {
+            return res.status(400).json({ message: 'Current password is incorrect' });
+        }
+        const hashed = await bcrypt.hash(newPassword, 12);
+        await prisma.superAdmin.update({ where: { id: account.id }, data: { password: hashed, refreshToken: null } });
+        res.json({ message: 'Password updated. Sign in again on your other sessions.' });
+    } catch (err) {
+        console.error('Superadmin password update error:', err);
+        res.status(500).json({ message: 'Unable to update password' });
+    }
+};
+
 // -------------------
 // PLAN CRUD
 // -------------------
@@ -180,6 +199,9 @@ exports.setAdminStatus = async (req, res) => {
     try {
         const { id } = req.params;
         const { isActive } = req.body;
+        if (!Number.isSafeInteger(Number(id)) || Number(id) < 1 || typeof isActive !== 'boolean') {
+            return res.status(400).json({ message: 'Valid owner ID and boolean isActive are required' });
+        }
         const admin = await prisma.admin.update({ where: { id: parseInt(id) }, data: { isActive: !!isActive } });
         res.json({ message: 'Admin status updated', admin });
     } catch (err) {

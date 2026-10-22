@@ -1,220 +1,196 @@
 const axios = require('axios');
 const prisma = require('../prisma/client');
 
-const NEW_PURCHASE_EVENTS = ['INITIAL_PURCHASE', 'NON_RENEWING_PURCHASE'];
-const REACTIVATE_EVENTS = ['RENEWAL', 'UNCANCELLATION', 'PRODUCT_CHANGE'];
+const LIVE_STATUSES = ['ACTIVE', 'GRACE_PERIOD'];
+const PURCHASE_EVENTS = new Set(['INITIAL_PURCHASE', 'RENEWAL', 'NON_RENEWING_PURCHASE', 'REFUND_REVERSED']);
+const LIFECYCLE_EVENTS = new Set([
+    ...PURCHASE_EVENTS,
+    'CANCELLATION', 'UNCANCELLATION', 'EXPIRATION', 'BILLING_ISSUE',
+    'SUBSCRIPTION_PAUSED', 'SUBSCRIPTION_EXTENDED', 'PRODUCT_CHANGE',
+]);
 
-function resolveAdminId(event) {
-    // Contract with the mobile app: it must call Purchases.logIn(String(adminId))
-    // right after our login succeeds, so app_user_id maps directly to Admin.id.
-    const adminId = parseInt(event.app_user_id, 10);
-    return Number.isNaN(adminId) ? null : adminId;
+function resolveAdminId(value) {
+    const id = String(value ?? '');
+    if (!/^[1-9]\d*$/.test(id)) return null;
+    const parsed = Number(id);
+    return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
-function statusForEvent(type) {
-    if (type === 'EXPIRATION') return 'EXPIRED';
-    if (type === 'BILLING_ISSUE') return 'GRACE_PERIOD';
-    if (type === 'SUBSCRIPTION_PAUSED') return 'PAUSED';
-    return 'ACTIVE';
+function parseDate(value) {
+    if (!value) return null;
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
 }
 
-// Processes one RevenueCat webhook event. Idempotent on event.id via the
-// unique constraint on SubscriptionPayment.revenueCatEventId — a retried
-// webhook delivery just hits P2002 and no-ops.
-async function handleWebhookEvent(event) {
-    const adminId = resolveAdminId(event);
-    if (!adminId) {
-        console.warn(`[revenueCat] Unmapped app_user_id "${event.app_user_id}" on event ${event.id} — skipping`);
-        return { ok: true, skipped: true, reason: 'UNMAPPED_APP_USER_ID' };
+// RevenueCat's current entitlement snapshot is authoritative. Webhook type
+// alone is not: PRODUCT_CHANGE can be deferred, CANCELLATION can retain access,
+// and webhook deliveries can arrive out of order.
+function selectActivePurchase(subscriber, plans, now = Date.now()) {
+    const planByProduct = new Map(plans.filter((p) => p.revenueCatProductId).map((p) => [p.revenueCatProductId, p]));
+    const candidates = [];
+
+    for (const [productId, subscription] of Object.entries(subscriber?.subscriptions || {})) {
+        const plan = planByProduct.get(productId);
+        if (!plan || plan.isActive === false) continue;
+        const purchaseDate = parseDate(subscription.purchase_date);
+        const expiry = parseDate(subscription.expires_date);
+        const graceExpiry = parseDate(subscription.grace_period_expires_date);
+        const effectiveExpiry = graceExpiry && (!expiry || graceExpiry > expiry) ? graceExpiry : expiry;
+        if (subscription?.refunded_at) continue;
+        if (effectiveExpiry && effectiveExpiry.getTime() <= now) continue;
+        if (!effectiveExpiry && !plan.isLifetime) continue;
+
+        const status = graceExpiry && graceExpiry.getTime() > now && (!expiry || expiry.getTime() <= now)
+            ? 'GRACE_PERIOD' : 'ACTIVE';
+        candidates.push({
+            plan, productId, status, expiryDate: effectiveExpiry,
+            purchasedAt: purchaseDate?.getTime() || 0,
+            store: subscription?.store?.toUpperCase() || null,
+            transactionId: subscription?.store_transaction_id ? String(subscription.store_transaction_id) : null,
+            cancelledAt: parseDate(subscription?.unsubscribe_detected_at),
+        });
     }
 
-    const admin = await prisma.admin.findUnique({ where: { id: adminId } });
-    if (!admin) {
-        console.warn(`[revenueCat] No Admin #${adminId} for event ${event.id} — skipping`);
-        return { ok: true, skipped: true, reason: 'ADMIN_NOT_FOUND' };
+    // Non-consumable lifetime purchases have no subscription expiry. RevenueCat
+    // removes refunded products from its active entitlements snapshot.
+    for (const entitlement of Object.values(subscriber?.entitlements || {})) {
+        const productId = entitlement.product_identifier;
+        const plan = planByProduct.get(productId);
+        if (!plan?.isLifetime || plan.isActive === false || parseDate(entitlement.expires_date)) continue;
+        const latestPurchase = (subscriber?.non_subscriptions?.[productId] || [])
+            .sort((a, b) => (parseDate(b.purchase_date)?.getTime() || 0) - (parseDate(a.purchase_date)?.getTime() || 0))[0];
+        candidates.push({
+            plan, productId, status: 'ACTIVE', expiryDate: null,
+            purchasedAt: parseDate(entitlement.purchase_date)?.getTime() || 0,
+            store: latestPurchase?.store?.toUpperCase() || null,
+            transactionId: latestPurchase?.id || null,
+            cancelledAt: null,
+        });
     }
 
-    const plan = await prisma.subscriptionPlan.findUnique({ where: { revenueCatProductId: event.product_id } });
-    if (!plan) {
-        console.warn(`[revenueCat] No SubscriptionPlan for product_id "${event.product_id}" on event ${event.id} — skipping`);
-        return { ok: true, skipped: true, reason: 'PLAN_NOT_FOUND' };
-    }
+    // The newest active purchase wins; a lifetime entitlement is still
+    // available on a later reconciliation if a newer subscription expires.
+    return candidates.sort((a, b) => b.purchasedAt - a.purchasedAt)[0] || null;
+}
+
+async function verifySubscriberFromApi(adminId) {
+    if (!process.env.REVENUECAT_API_KEY) throw new Error('REVENUECAT_API_KEY is not configured');
+    const { data } = await axios.get(`https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(adminId)}`, {
+        headers: { Authorization: `Bearer ${process.env.REVENUECAT_API_KEY}` },
+        timeout: 10000,
+    });
+    if (!data?.subscriber) throw new Error('RevenueCat returned no subscriber');
+    return data;
+}
+
+async function reconcileFromSubscriber(adminId, event = null) {
+    const id = resolveAdminId(adminId);
+    if (!id) throw new Error('Invalid admin ID for RevenueCat reconciliation');
+    const [data, plans] = await Promise.all([
+        verifySubscriberFromApi(id),
+        prisma.subscriptionPlan.findMany({ where: { revenueCatProductId: { not: null } } }),
+    ]);
+    const selected = selectActivePurchase(data.subscriber, plans);
 
     try {
         return await prisma.$transaction(async (tx) => {
-            const expiryDate = event.expiration_at_ms ? new Date(event.expiration_at_ms) : null;
-            const pricePaid = typeof event.price === 'number' ? event.price : null;
+            if (event?.id) {
+                const prior = await tx.subscriptionPayment.findUnique({ where: { revenueCatEventId: event.id } });
+                if (prior) return { ok: true, deduped: true };
+            }
 
-            let subscription;
-
-            if (NEW_PURCHASE_EVENTS.includes(event.type)) {
-                // A fresh purchase — supersede any other live subscription so
-                // exactly one stays ACTIVE/GRACE_PERIOD at a time, then record
-                // this purchase as its own row (preserves purchase history).
-                await tx.userSubscription.updateMany({
-                    where: { adminId, status: { in: ['ACTIVE', 'GRACE_PERIOD'] } },
-                    data: { status: 'EXPIRED' },
-                });
-
-                subscription = await tx.userSubscription.create({
-                    data: {
-                        adminId,
-                        planId: plan.id,
-                        status: 'ACTIVE',
-                        isTrial: false,
-                        paymentProvider: 'REVENUECAT',
-                        billingCycle: plan.billingCycle,
-                        pricePaid,
-                        priceCurrency: event.currency || plan.currency,
-                        revenueCatAppUserId: event.app_user_id,
-                        originalTransactionId: event.original_transaction_id || event.transaction_id,
-                        productId: event.product_id,
-                        store: event.store,
-                        expiryDate,
-                        cloudEnabled: plan.cloudEnabled,
-                        offlineEnabled: plan.offlineEnabled,
-                        maxDevices: plan.maxDevices,
-                    },
-                });
-            } else {
+            let subscription = null;
+            if (selected) {
                 subscription = await tx.userSubscription.findFirst({
-                    where: { adminId },
+                    where: { adminId: id, paymentProvider: 'REVENUECAT', productId: selected.productId },
                     orderBy: { createdAt: 'desc' },
                 });
+            }
 
-                if (!subscription) {
-                    // Out-of-order delivery (e.g. a RENEWAL arriving before its
-                    // INITIAL_PURCHASE) — create the row now so we don't drop the event.
-                    subscription = await tx.userSubscription.create({
+            await tx.userSubscription.updateMany({
+                where: {
+                    adminId: id,
+                    status: { in: LIVE_STATUSES },
+                    ...(selected ? {} : { paymentProvider: 'REVENUECAT' }),
+                    ...(subscription ? { id: { not: subscription.id } } : {}),
+                },
+                data: { status: 'EXPIRED' },
+            });
+
+            if (selected) {
+                const fields = {
+                    planId: selected.plan.id,
+                    status: selected.status,
+                    expiryDate: selected.expiryDate,
+                    cancelledAt: selected.cancelledAt,
+                    billingCycle: selected.plan.billingCycle,
+                    productId: selected.productId,
+                    store: selected.store || event?.store || null,
+                    revenueCatAppUserId: String(id),
+                    originalTransactionId: subscription?.originalTransactionId || event?.original_transaction_id || selected.transactionId,
+                    cloudEnabled: selected.plan.cloudEnabled,
+                    offlineEnabled: selected.plan.offlineEnabled,
+                    maxDevices: selected.plan.maxDevices,
+                    isTrial: false,
+                };
+                subscription = subscription
+                    ? await tx.userSubscription.update({ where: { id: subscription.id }, data: fields })
+                    : await tx.userSubscription.create({ data: { adminId: id, paymentProvider: 'REVENUECAT', ...fields } });
+            }
+
+            if (event?.id) {
+                // Non-purchase events are audit records, never paid invoices.
+                const ledgerTarget = subscription || await tx.userSubscription.findFirst({
+                    where: { adminId: id, paymentProvider: 'REVENUECAT' }, orderBy: { createdAt: 'desc' },
+                });
+                if (ledgerTarget) {
+                    await tx.subscriptionPayment.create({
                         data: {
-                            adminId,
-                            planId: plan.id,
-                            status: statusForEvent(event.type),
-                            isTrial: false,
+                            subscriptionId: ledgerTarget.id,
+                            amount: PURCHASE_EVENTS.has(event.type) && typeof event.price_in_purchased_currency === 'number'
+                                ? event.price_in_purchased_currency : 0,
+                            currency: event.currency || selected?.plan.currency || 'PKR',
                             paymentProvider: 'REVENUECAT',
-                            billingCycle: plan.billingCycle,
-                            pricePaid,
-                            priceCurrency: event.currency || plan.currency,
-                            revenueCatAppUserId: event.app_user_id,
-                            productId: event.product_id,
-                            store: event.store,
-                            expiryDate,
-                            cloudEnabled: plan.cloudEnabled,
-                            offlineEnabled: plan.offlineEnabled,
-                            maxDevices: plan.maxDevices,
+                            paymentStatus: PURCHASE_EVENTS.has(event.type) ? 'PAID'
+                                : event.type === 'BILLING_ISSUE' ? 'FAILED'
+                                    : event.type === 'CANCELLATION' && event.cancel_reason === 'CUSTOMER_SUPPORT' ? 'REFUNDED' : 'PENDING',
+                            transactionId: event.transaction_id || null,
+                            revenueCatEventId: event.id,
+                            eventType: event.type,
+                            rawPayload: event,
+                            paidAt: PURCHASE_EVENTS.has(event.type) ? new Date() : null,
                         },
-                    });
-                } else {
-                    const data = {};
-
-                    if (event.type === 'CANCELLATION') {
-                        // Auto-renew turned off — don't revoke access yet, the
-                        // current paid period hasn't ended. EXPIRATION/the cron
-                        // sweep handles the actual revocation once it does.
-                        data.cancelledAt = new Date();
-                    } else {
-                        data.status = statusForEvent(event.type);
-                        if (expiryDate) data.expiryDate = expiryDate;
-                        if (event.type === 'UNCANCELLATION') data.cancelledAt = null;
-                    }
-
-                    subscription = await tx.userSubscription.update({
-                        where: { id: subscription.id },
-                        data,
                     });
                 }
             }
-
-            await tx.subscriptionPayment.create({
-                data: {
-                    subscriptionId: subscription.id,
-                    amount: pricePaid || 0,
-                    currency: event.currency || plan.currency,
-                    paymentProvider: 'REVENUECAT',
-                    paymentStatus: event.type === 'BILLING_ISSUE' ? 'FAILED' : 'PAID',
-                    transactionId: event.transaction_id,
-                    revenueCatEventId: event.id,
-                    eventType: event.type,
-                    rawPayload: event,
-                    paidAt: new Date(),
-                },
-            });
-
-            return { ok: true, subscriptionId: subscription.id };
+            return { ok: true, reconciled: true, subscriptionId: subscription?.id || null };
         });
     } catch (err) {
-        if (err.code === 'P2002' && err.meta?.target?.includes('revenueCatEventId')) {
-            // Already processed this exact event (RevenueCat retried delivery).
+        if (err.code === 'P2002' && String(err.meta?.target).includes('revenueCatEventId')) {
             return { ok: true, deduped: true };
         }
         throw err;
     }
 }
 
-// Safety net for the race where a client finishes a purchase before the
-// webhook lands: calls RevenueCat's REST API directly and reconciles.
-async function verifySubscriberFromApi(adminId) {
-    if (!process.env.REVENUECAT_API_KEY) {
-        throw new Error('REVENUECAT_API_KEY is not configured');
+async function handleWebhookEvent(event) {
+    if (event.type === 'TEST') return { ok: true, skipped: true, reason: 'TEST_EVENT' };
+    if (event.type === 'TRANSFER') {
+        const ids = [...new Set([...(event.transferred_from || []), ...(event.transferred_to || [])]
+            .map(resolveAdminId).filter(Boolean))];
+        await Promise.all(ids.map((id) => reconcileFromSubscriber(id)));
+        return { ok: true, reconciled: ids.length };
     }
-
-    const { data } = await axios.get(`https://api.revenuecat.com/v1/subscribers/${adminId}`, {
-        headers: { Authorization: `Bearer ${process.env.REVENUECAT_API_KEY}` },
-    });
-
-    return data;
+    if (!LIFECYCLE_EVENTS.has(event.type)) return { ok: true, skipped: true, reason: 'UNSUPPORTED_EVENT' };
+    const adminId = resolveAdminId(event.app_user_id);
+    if (!adminId) return { ok: true, skipped: true, reason: 'UNMAPPED_APP_USER_ID' };
+    const admin = await prisma.admin.findUnique({ where: { id: adminId }, select: { id: true } });
+    if (!admin) return { ok: true, skipped: true, reason: 'ADMIN_NOT_FOUND' };
+    if (event.product_id) {
+        const plan = await prisma.subscriptionPlan.findUnique({ where: { revenueCatProductId: event.product_id } });
+        if (!plan) throw new Error(`No SubscriptionPlan maps RevenueCat product ${event.product_id}`);
+    }
+    return reconcileFromSubscriber(adminId, event);
 }
 
-// Reconciles local state from RevenueCat's live subscriber snapshot, for the
-// race where a client finishes checkout before the webhook has landed. Picks
-// the most-recently-purchased non-expired entitlement (subscription or
-// one-time product) and feeds it through the same path as a real webhook
-// event, so there is only one place that actually writes UserSubscription rows.
-async function reconcileFromSubscriber(adminId) {
-    const data = await verifySubscriberFromApi(adminId);
-    const subscriber = data.subscriber;
-    if (!subscriber) return { ok: true, reconciled: false };
-
-    const now = Date.now();
-    let best = null;
-
-    for (const [productId, sub] of Object.entries(subscriber.subscriptions || {})) {
-        const expiresAtMs = sub.expires_date ? new Date(sub.expires_date).getTime() : null;
-        if (expiresAtMs && expiresAtMs < now) continue;
-        const purchasedAtMs = new Date(sub.purchase_date).getTime();
-        if (!best || purchasedAtMs > best.purchasedAtMs) {
-            best = { productId, expiresAtMs, purchasedAtMs, store: sub.store?.toUpperCase() || null, type: 'RENEWAL' };
-        }
-    }
-
-    for (const [productId, entries] of Object.entries(subscriber.non_subscriptions || {})) {
-        const latest = entries[entries.length - 1];
-        if (!latest) continue;
-        const purchasedAtMs = new Date(latest.purchase_date).getTime();
-        if (!best || purchasedAtMs > best.purchasedAtMs) {
-            best = { productId, expiresAtMs: null, purchasedAtMs, store: latest.store?.toUpperCase() || null, type: 'NON_RENEWING_PURCHASE' };
-        }
-    }
-
-    if (!best) return { ok: true, reconciled: false };
-
-    const syntheticEvent = {
-        id: `verify_${adminId}_${best.purchasedAtMs}`,
-        type: best.type,
-        app_user_id: String(adminId),
-        product_id: best.productId,
-        expiration_at_ms: best.expiresAtMs,
-        store: best.store,
-        price: null,
-        currency: null,
-        transaction_id: `verify_${best.purchasedAtMs}`,
-    };
-
-    return handleWebhookEvent(syntheticEvent);
-}
-
-module.exports = {
-    handleWebhookEvent,
-    verifySubscriberFromApi,
-    reconcileFromSubscriber,
-};
+module.exports = { handleWebhookEvent, verifySubscriberFromApi, reconcileFromSubscriber, selectActivePurchase };
