@@ -1,6 +1,6 @@
 const prisma = require('../prisma/client');
-const { applyBillItemStock } = require('./billStockService');
 const { adjustCustomerBalance } = require('./customerService');
+const { normalizePaymentMethod } = require('../utils/paymentMethod');
 
 const PAGE_SIZE = 500;
 
@@ -60,6 +60,7 @@ async function pullChanges(tenant, sinceIso) {
         ['stockTransactions', prisma.stockTransaction, 'createdAt'],
         ['customers', prisma.customer, 'updatedAt'],
         ['customerPayments', prisma.customerPayment, 'createdAt'],
+        ['expenses', prisma.expense, 'updatedAt'],
     ];
     const pages = await Promise.all(specs.map(async ([name, model, field]) => {
         const position = positions[name];
@@ -188,6 +189,7 @@ async function pushProducts(tenant, deviceId, operations) {
                 packSalePrice: p.packSalePrice ?? null,
                 purchasePrice: p.purchasePrice,
                 salePrice: p.salePrice,
+                lowStockThreshold: p.lowStockThreshold ?? null,
                 clientId: op.clientId,
                 deviceId,
             };
@@ -236,20 +238,9 @@ async function pushStockAdjustments(tenant, deviceId, operations) {
                 const quantity = parseFloat(p.quantity) || 0;
                 const type = p.type; // "IN" | "OUT" | "PACK_BREAK"
 
-                if (type === 'PACK_BREAK') {
-                    await tx.product.update({
-                        where: { id: product.id, shopId: tenant.shopId },
-                        data: {
-                            stockPacks: { decrement: quantity },
-                            stockLooseUnits: { increment: quantity * (product.packSize || 1) },
-                        },
-                    });
-                } else {
-                    await tx.product.update({
-                        where: { id: product.id, shopId: tenant.shopId },
-                        data: { stockQuantity: { [type === 'OUT' ? 'decrement' : 'increment']: quantity } },
-                    });
-                }
+                // The device pushed its final product counters first. This
+                // operation records the audit entry only; applying the delta
+                // here would count the same stock movement twice.
 
                 return tx.stockTransaction.create({
                     data: {
@@ -303,6 +294,7 @@ async function pushBills(tenant, deviceId, operations) {
                         totalReceived: parseFloat(b.totalReceived) || 0,
                         changeDue: parseFloat(b.changeDue) || 0,
                         remainingDue,
+                        paymentMethod: normalizePaymentMethod(b.paymentMethod),
                         status: b.status || 'PENDING',
                         clientId: op.clientId,
                         deviceId,
@@ -340,7 +332,15 @@ async function pushBills(tenant, deviceId, operations) {
                         },
                     });
 
-                    const { quantityForLog } = await applyBillItemStock(tx, product, item, -1);
+                    // Product counters were already synchronized by
+                    // pushProducts. This bill supplies its ledger entry only.
+                    const quantityForLog = item.stockType === 'AREA'
+                        ? (product.sheetAreaCm2 ? (parseFloat(item.totalArea) || 0) / product.sheetAreaCm2 : parseFloat(item.quantity) || 0)
+                        : item.stockType === 'LENGTH'
+                            ? parseFloat(item.lengthCm) || 0
+                            : item.stockType === 'PACK'
+                                ? (parseFloat(item.packQuantity) || 0) * (product.packSize || 1) + (parseFloat(item.looseQuantity) || 0)
+                                : parseFloat(item.quantity) || 0;
 
                     await tx.stockTransaction.create({
                         data: {
@@ -350,6 +350,7 @@ async function pushBills(tenant, deviceId, operations) {
                             quantity: quantityForLog,
                             price: item.pricePerUnit,
                             description: `Sold in Bill #${bill.id} (Synced)`,
+                            clientId: item.stockTransactionClientId || null,
                             deviceId,
                         },
                     });
@@ -459,6 +460,49 @@ async function pushCustomerPayments(tenant, deviceId, operations) {
     return results;
 }
 
+async function pushExpenses(tenant, deviceId, operations) {
+    const results = [];
+    const allowedCategories = new Set(['RENT', 'UTILITIES', 'SALARY', 'TRANSPORT', 'OTHER']);
+    for (const op of operations || []) {
+        try {
+            if (!op.clientId) throw new Error('clientId is required');
+            const existing = await prisma.expense.findFirst({ where: { shopId: tenant.shopId, clientId: op.clientId } });
+            if (op.operationType === 'DELETE') {
+                if (existing && !existing.isDeleted) {
+                    await prisma.expense.update({ where: { id: existing.id }, data: { isDeleted: true, deletedAt: new Date(), deviceId } });
+                }
+                results.push({ clientId: op.clientId, serverId: existing?.id, status: 'deleted' });
+                continue;
+            }
+            const payload = op.payload || {};
+            const amount = Number(payload.amount);
+            const occurredAt = new Date(payload.occurredAt);
+            if (!allowedCategories.has(payload.category) || !Number.isFinite(amount) || amount <= 0 || Number.isNaN(occurredAt.getTime())) {
+                throw new Error('Invalid expense data');
+            }
+            const data = {
+                shopId: tenant.shopId,
+                category: payload.category,
+                amount,
+                note: payload.note || null,
+                occurredAt,
+                deviceId,
+            };
+            if (!existing) {
+                const created = await prisma.expense.create({ data: { ...data, clientId: op.clientId } });
+                results.push({ clientId: op.clientId, serverId: created.id, status: 'created' });
+                continue;
+            }
+            const conflict = !!op.baseUpdatedAt && new Date(op.baseUpdatedAt) < existing.updatedAt;
+            const updated = await prisma.expense.update({ where: { id: existing.id }, data });
+            results.push({ clientId: op.clientId, serverId: updated.id, status: conflict ? 'conflict' : 'updated' });
+        } catch (error) {
+            results.push({ clientId: op.clientId, status: 'error', error: error.message });
+        }
+    }
+    return results;
+}
+
 // ----------------------------------------------------------------------------
 // Status
 // ----------------------------------------------------------------------------
@@ -483,5 +527,6 @@ module.exports = {
     pushBills,
     pushCustomers,
     pushCustomerPayments,
+    pushExpenses,
     getSyncStatus,
 };

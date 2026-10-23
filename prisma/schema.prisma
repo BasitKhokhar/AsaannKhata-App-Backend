@@ -146,6 +146,7 @@ model Shop {
   devices            Device[]
   customers          Customer[]
   customerPayments   CustomerPayment[]
+  expenses           Expense[]
   adCoinTransactions AdCoinTransaction[]
   notifications      Notification[]
 
@@ -219,6 +220,7 @@ model Product {
 
   purchasePrice Float
   salePrice     Float
+  lowStockThreshold Float?
 
   isDeleted Boolean   @default(false)
   deletedAt DateTime?
@@ -258,6 +260,7 @@ model Bill {
   totalReceived Float
   changeDue     Float
   remainingDue  Float      @default(0)
+  paymentMethod String     @default("UNSPECIFIED")
   status        BillStatus @default(PENDING)
 
   isDeleted Boolean   @default(false) // voided bill — tombstone for sync
@@ -438,6 +441,29 @@ model CustomerPayment {
   @@unique([shopId, clientId])
   @@index([shopId])
   @@index([customerId])
+}
+
+model Expense {
+  id         Int       @id @default(autoincrement())
+  shopId     Int
+  category   String
+  amount     Float
+  note       String?
+  occurredAt DateTime
+
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  clientId   String?
+  deviceId   String?
+
+  shop Shop @relation(fields: [shopId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([shopId, clientId])
+  @@index([shopId, updatedAt])
+  @@index([shopId, occurredAt])
 }
 
 //////////////////////////////////////////////////////

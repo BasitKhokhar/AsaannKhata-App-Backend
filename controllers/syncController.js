@@ -49,6 +49,7 @@ exports.pushStockAdjustments = makePushHandler(syncService.pushStockAdjustments)
 exports.pushBills = makePushHandler(syncService.pushBills);
 exports.pushCustomers = makePushHandler(syncService.pushCustomers);
 exports.pushCustomerPayments = makePushHandler(syncService.pushCustomerPayments);
+exports.pushExpenses = makePushHandler(syncService.pushExpenses);
 
 exports.status = async (req, res) => {
     try {

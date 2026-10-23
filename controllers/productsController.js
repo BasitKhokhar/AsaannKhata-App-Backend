@@ -23,6 +23,7 @@ exports.createProduct = async (req, res) => {
             packSalePrice,
             stockPacks,
             stockLooseUnits,
+            lowStockThreshold,
         } = req.body;
 
         const shopId = req.tenant.shopId;
@@ -43,6 +44,7 @@ exports.createProduct = async (req, res) => {
                 image: imageUrl,
                 purchasePrice: parseFloat(purchasePrice),
                 salePrice: parseFloat(salePrice),
+                lowStockThreshold: lowStockThreshold === undefined || lowStockThreshold === '' ? null : parseFloat(lowStockThreshold),
             };
 
             const normalizedType = normalizeStockType(stockType);
@@ -206,6 +208,7 @@ exports.updateProduct = async (req, res) => {
                 packSalePrice,
                 stockPacks,
                 stockLooseUnits,
+                lowStockThreshold,
             } = req.body;
 
             const file = req.file;
@@ -225,6 +228,7 @@ exports.updateProduct = async (req, res) => {
                 image: imageUrl,
                 purchasePrice: purchasePrice ? parseFloat(purchasePrice) : undefined,
                 salePrice: salePrice ? parseFloat(salePrice) : undefined,
+                lowStockThreshold: lowStockThreshold === undefined ? undefined : lowStockThreshold === '' ? null : parseFloat(lowStockThreshold),
             };
 
             if (categoryId !== undefined && categoryId !== 'undefined') {

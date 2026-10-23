@@ -2,10 +2,11 @@ const prisma = require('../prisma/client');
 const { normalizeStockType } = require('../utils/stockType');
 const { applyBillItemStock } = require('../services/billStockService');
 const { adjustCustomerBalance } = require('../services/customerService');
+const { normalizePaymentMethod } = require('../utils/paymentMethod');
 
 // Create a new Bill
 exports.createBill = async (req, res) => {
-    const { customerName, customerPhone, customerId, subtotal, discount, totalAmount, totalReceived, changeDue, remainingDue, items, status } = req.body;
+    const { customerName, customerPhone, customerId, subtotal, discount, totalAmount, totalReceived, changeDue, remainingDue, paymentMethod, items, status } = req.body;
     const shopId = req.tenant.shopId;
 
     try {
@@ -25,6 +26,7 @@ exports.createBill = async (req, res) => {
                     totalReceived: parseFloat(totalReceived) || 0,
                     changeDue: parseFloat(changeDue) || 0,
                     remainingDue: parsedRemainingDue,
+                    paymentMethod: normalizePaymentMethod(paymentMethod),
                     status: (status || 'pending').toUpperCase(),
                 },
             });

@@ -19,6 +19,15 @@ const SHOP_TYPES = [
     { code: 'FOOTWEAR', label: 'Footwear', defaultStockType: 'QUANTITY', sortOrder: 11 },
     { code: 'PHARMACY', label: 'Pharmacy', defaultStockType: 'QUANTITY', sortOrder: 12, suggestedCategories: ['Tablets', 'Syrups', 'Injections', 'Surgical'] },
     { code: 'MOBILE_ACCESSORIES', label: 'Mobile Accessories', defaultStockType: 'QUANTITY', sortOrder: 13 },
+    { code: 'GROCERY_STORE', label: 'Grocery Store', defaultStockType: 'QUANTITY', sortOrder: 14 },
+    { code: 'MILK_SHOP', label: 'Milk Shop', defaultStockType: 'QUANTITY', sortOrder: 15 },
+    { code: 'ATTA_CHAKKI', label: 'Atta Chakki', defaultStockType: 'QUANTITY', sortOrder: 16 },
+    { code: 'CLOTHING_STORE', label: 'Clothing Store', defaultStockType: 'QUANTITY', sortOrder: 17 },
+    { code: 'BAKERY', label: 'Bakery', defaultStockType: 'QUANTITY', sortOrder: 18 },
+    { code: 'RESTAURANT', label: 'Restaurant', defaultStockType: 'QUANTITY', sortOrder: 19 },
+    { code: 'SALON_SPA', label: 'Salon & Spa', defaultStockType: 'QUANTITY', sortOrder: 20 },
+    { code: 'AUTO_PARTS', label: 'Auto Parts', defaultStockType: 'QUANTITY', sortOrder: 21 },
+    { code: 'MOBILE_SHOP', label: 'Mobile Shop', defaultStockType: 'QUANTITY', sortOrder: 22 },
 ];
 
 // SubscriptionPlan catalog — the 3 packages: FREE_TRIAL, LIFETIME, and

@@ -92,6 +92,7 @@ exports.getDashboardStats = async (req, res) => {
                 packSalePrice: true,
                 name: true,
                 id: true,
+                lowStockThreshold: true,
             },
         });
 
@@ -104,10 +105,9 @@ exports.getDashboardStats = async (req, res) => {
             return sum + prod.salePrice * stockUnitsFor(prod);
         }, 0);
 
-        // 3. Low Stock Alerts (base-unit stock below threshold, across all stock types)
-        const lowStockThreshold = 10;
+        // 3. Low Stock Alerts (configured threshold in each mode's display units)
         const lowStockAlerts = products
-            .filter((prod) => stockUnitsFor(prod) < lowStockThreshold)
+            .filter((prod) => prod.lowStockThreshold != null && (prod.stockType === 'PACK' ? (prod.stockPacks || 0) + (prod.stockLooseUnits || 0) : stockUnitsFor(prod)) <= prod.lowStockThreshold)
             .map((prod) => ({
                 id: `PRD-${prod.id}`,
                 name: prod.name,

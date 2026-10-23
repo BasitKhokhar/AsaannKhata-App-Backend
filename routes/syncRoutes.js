@@ -30,5 +30,6 @@ router.post('/push/stock-adjustments', requireDeviceRegistered, requireSyncQuota
 router.post('/push/bills', requireDeviceRegistered, requireSyncQuota, syncController.pushBills);
 router.post('/push/customers', requireDeviceRegistered, requireSyncQuota, syncController.pushCustomers);
 router.post('/push/customer-payments', requireDeviceRegistered, requireSyncQuota, syncController.pushCustomerPayments);
+router.post('/push/expenses', requireDeviceRegistered, requireSyncQuota, syncController.pushExpenses);
 
 module.exports = router;
