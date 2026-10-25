@@ -1,5 +1,15 @@
 # Deploying the SaaS multi-tenant upgrade
 
+## Shop query indexes (2026-10-24)
+
+Migration `20261024000000_shop_query_indexes` adds composite indexes for
+shop-scoped category, product, bill, stock-transaction, customer, and payment
+history queries. It does not change or remove records. Run
+`npx prisma migrate deploy` during the backend deployment before relying on the new indexes in
+production; adding indexes to large tables can take time, so schedule the
+migration accordingly. The frontend's separate Drizzle migrations
+`0004_greedy_gauntlet` and `0005_thankful_piledriver` are applied on app startup.
+
 This backend was restructured from a single-vertical (aluminum/glass) POS into
 a multi-tenant SaaS covering multiple shop verticals, subscriptions, and
 device sync. The schema change is shipped as two migrations:

@@ -37,9 +37,15 @@ exports.createProduct = async (req, res) => {
                 imageUrl = await bucketStorage.uploadImageFromBuffer(file.buffer, file.mimetype, filename);
             }
 
+            const parsedCategoryId = categoryId && categoryId !== 'undefined' && !isNaN(parseInt(categoryId)) ? parseInt(categoryId) : null;
+            if (parsedCategoryId) {
+                const category = await prisma.category.findFirst({ where: { id: parsedCategoryId, shopId, isDeleted: false } });
+                if (!category) return res.status(400).json({ message: 'Category not found for this shop' });
+            }
+
             let data = {
                 shopId,
-                categoryId: categoryId && categoryId !== 'undefined' && !isNaN(parseInt(categoryId)) ? parseInt(categoryId) : null,
+                categoryId: parsedCategoryId,
                 name,
                 image: imageUrl,
                 purchasePrice: parseFloat(purchasePrice),
@@ -234,6 +240,10 @@ exports.updateProduct = async (req, res) => {
             if (categoryId !== undefined && categoryId !== 'undefined') {
                 const parsedId = parseInt(categoryId);
                 updateData.categoryId = !isNaN(parsedId) ? parsedId : null;
+                if (updateData.categoryId) {
+                    const category = await prisma.category.findFirst({ where: { id: updateData.categoryId, shopId, isDeleted: false } });
+                    if (!category) return res.status(400).json({ message: 'Category not found for this shop' });
+                }
             }
 
             const currentType = stockType ? normalizeStockType(stockType) : existingProduct.stockType;

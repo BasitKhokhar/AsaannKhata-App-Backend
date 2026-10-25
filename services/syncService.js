@@ -172,6 +172,10 @@ async function pushProducts(tenant, deviceId, operations) {
             }
 
             const p = op.payload;
+            if (p.categoryId != null) {
+                const category = await prisma.category.findFirst({ where: { id: Number(p.categoryId), shopId: tenant.shopId, isDeleted: false } });
+                if (!category) throw new Error('Category not found for this shop');
+            }
             // Only stock counters explicitly present are written — a metadata-only
             // edit (name/price change) must never silently zero out stock that was
             // moved through /sync/push/stock-adjustments in the meantime.
@@ -281,6 +285,10 @@ async function pushBills(tenant, deviceId, operations) {
             const created = await prisma.$transaction(async (tx) => {
                 const customerId = b.customerId ? parseInt(b.customerId) : null;
                 const remainingDue = parseFloat(b.remainingDue) || 0;
+                if (customerId) {
+                    const customer = await tx.customer.findFirst({ where: { id: customerId, shopId: tenant.shopId, isDeleted: false } });
+                    if (!customer) throw new Error('Customer not found for this shop');
+                }
 
                 const bill = await tx.bill.create({
                     data: {

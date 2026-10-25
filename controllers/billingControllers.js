@@ -13,6 +13,10 @@ exports.createBill = async (req, res) => {
         const result = await prisma.$transaction(async (tx) => {
             const parsedCustomerId = customerId ? parseInt(customerId) : null;
             const parsedRemainingDue = parseFloat(remainingDue) || 0;
+            if (parsedCustomerId) {
+                const customer = await tx.customer.findFirst({ where: { id: parsedCustomerId, shopId, isDeleted: false } });
+                if (!customer) throw new Error('Customer not found for this shop');
+            }
 
             const bill = await tx.bill.create({
                 data: {

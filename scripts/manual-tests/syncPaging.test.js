@@ -21,7 +21,7 @@ const fakePrisma = Object.fromEntries(Object.entries(rows).map(([name, data]) =>
     },
 }]));
 require.cache[clientPath] = { id: clientPath, filename: clientPath, loaded: true, exports: fakePrisma };
-const { pullChanges, pushStockAdjustments, pushBills } = require('../../services/syncService');
+const { pullChanges, pushProducts, pushStockAdjustments, pushBills } = require('../../services/syncService');
 
 test('pull returns all 501 equal-timestamp rows exactly once', async () => {
     const first = await pullChanges({ shopId: 1 }, undefined);
@@ -87,4 +87,31 @@ test('synced bill retains payment method and matches its sale log without changi
     assert.equal(productUpdates, 0);
     assert.equal(logs.length, 1);
     assert.equal(logs[0].clientId, 'sale-log-1');
+});
+
+test('a synced product cannot reference a category from another shop', async () => {
+    let productCreated = false;
+    fakePrisma.category.findFirst = async () => null;
+    fakePrisma.product.findFirst = async () => null;
+    fakePrisma.product.create = async () => { productCreated = true; };
+    const results = await pushProducts({ shopId: 1 }, 'device-1', [{
+        clientId: 'product-1', operationType: 'UPSERT', payload: { categoryId: 99, name: 'Milk' },
+    }]);
+    assert.equal(results[0].status, 'error');
+    assert.equal(results[0].error, 'Category not found for this shop');
+    assert.equal(productCreated, false);
+});
+
+test('a synced bill cannot reference a customer from another shop', async () => {
+    let billCreated = false;
+    fakePrisma.$transaction = async (callback) => callback(fakePrisma);
+    fakePrisma.bill.findFirst = async () => null;
+    fakePrisma.bill.create = async () => { billCreated = true; };
+    fakePrisma.customer.findFirst = async () => null;
+    const results = await pushBills({ shopId: 1 }, 'device-1', [{
+        clientId: 'bill-cross-shop', payload: { customerId: 99, customerName: 'Other shop customer', items: [] },
+    }]);
+    assert.equal(results[0].status, 'error');
+    assert.equal(results[0].error, 'Customer not found for this shop');
+    assert.equal(billCreated, false);
 });
