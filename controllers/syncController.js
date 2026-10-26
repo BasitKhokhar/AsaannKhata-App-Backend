@@ -32,6 +32,9 @@ exports.pull = async (req, res) => {
 
 function makePushHandler(fn) {
     return async (req, res) => {
+        if (!Array.isArray(req.body?.operations) || req.body.operations.length > 100) {
+            return res.status(400).json({ message: 'operations must be an array of at most 100 items' });
+        }
         try {
             const deviceId = req.headers['x-device-id'];
             const results = await fn(req.tenant, deviceId, req.body.operations);

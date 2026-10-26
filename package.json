@@ -7,7 +7,7 @@
   "license": "ISC",
   "description": "",
   "scripts": {
-    "test": "node --test scripts/manual-tests/syncPaging.test.js scripts/manual-tests/revenueCatService.test.js scripts/manual-tests/platformDashboard.test.js",
+    "test": "node --test scripts/manual-tests/*.test.js",
     "start": "node server.js",
     "dev": "nodemon server.js",
     "seed": "node prisma/seed.js"
@@ -15,18 +15,21 @@
   "dependencies": {
     "@prisma/client": "^6.12.0",
     "axios": "^1.13.2",
-    "bcrypt": "^5.1.1",
+    "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^4.21.2",
-    "firebase-admin": "^13.10.0",
+    "express-rate-limit": "^8.7.1",
+    "firebase-admin": "^14.5.0",
     "form-data": "^4.0.5",
+    "helmet": "^8.3.0",
     "iconv-lite": "^0.6.3",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
     "mysql": "^2.18.1",
     "mysql2": "^3.14.1",
-    "node-cron": "^3.0.3",
+    "node-cron": "^4.6.0",
+    "nodemailer": "^10.2.1",
     "ssh2-sftp-client": "^12.1.0"
   },
   "devDependencies": {

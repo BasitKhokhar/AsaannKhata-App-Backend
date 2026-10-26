@@ -1,9 +1,7 @@
 const prisma = require('../prisma/client');
 const bucketStorage = require('../utils/bucketStorage');
 const { seedDefaultCategoriesForShop } = require('../services/shopTypeService');
-const multer = require('multer');
-
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = require('../middleware/imageUpload');
 
 // Create an additional shop under the same admin (the first shop is created
 // as part of POST /auth/admin/register, not here).

@@ -80,7 +80,9 @@ model Admin {
   phone        String?
   password     String
   refreshToken String?
+  tokenVersion  Int     @default(0)
   isActive     Boolean @default(true) // superadmin suspension switch
+  passwordReset PasswordReset?
 
   // Ads + reward-coins economy — lets a FREE_TRIAL/non-cloud admin earn a
   // short-lived cloud-sync unlock by watching reward ads instead of paying.
@@ -98,6 +100,15 @@ model Admin {
   updatedAt DateTime @updatedAt
 
   @@index([email])
+}
+
+model PasswordReset {
+  adminId     Int      @id
+  admin       Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  codeHash    String
+  expiresAt   DateTime
+  requestedAt DateTime @default(now())
+  attempts    Int      @default(0)
 }
 
 // A configurable business vertical (aluminum, tiles, general store, pharmacy, ...).

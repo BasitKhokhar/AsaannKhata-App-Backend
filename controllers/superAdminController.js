@@ -202,7 +202,7 @@ exports.setAdminStatus = async (req, res) => {
         if (!Number.isSafeInteger(Number(id)) || Number(id) < 1 || typeof isActive !== 'boolean') {
             return res.status(400).json({ message: 'Valid owner ID and boolean isActive are required' });
         }
-        const admin = await prisma.admin.update({ where: { id: parseInt(id) }, data: { isActive: !!isActive } });
+        const admin = await prisma.admin.update({ where: { id: parseInt(id) }, data: { isActive: !!isActive }, select: { id: true, email: true, isActive: true } });
         res.json({ message: 'Admin status updated', admin });
     } catch (err) {
         console.error('Set Admin Status Error:', err);

@@ -1,5 +1,6 @@
 const path = require('path');
-const admin = require('firebase-admin');
+const { initializeApp, cert } = require('firebase-admin/app');
+const { getMessaging } = require('firebase-admin/messaging');
 
 // Lazily initializes firebase-admin from a service account, tried in order:
 //   1. FIREBASE_SERVICE_ACCOUNT_JSON — the service account as a raw JSON string
@@ -29,10 +30,10 @@ function ensureInitialized() {
 
         if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
             const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
-            credential = admin.credential.cert(serviceAccount);
+            credential = cert(serviceAccount);
         } else if (process.env.FIREBASE_SERVICE_ACCOUNT_PATH) {
             const serviceAccount = require(path.resolve(process.env.FIREBASE_SERVICE_ACCOUNT_PATH));
-            credential = admin.credential.cert(serviceAccount);
+            credential = cert(serviceAccount);
         }
 
         if (!credential) {
@@ -40,7 +41,7 @@ function ensureInitialized() {
             return false;
         }
 
-        admin.initializeApp({
+        initializeApp({
             credential,
             projectId: process.env.FIREBASE_PROJECT_ID || undefined,
         });
@@ -63,6 +64,6 @@ const noopMessaging = {
 
 module.exports = {
     messaging() {
-        return ensureInitialized() ? admin.messaging() : noopMessaging;
+        return ensureInitialized() ? getMessaging() : noopMessaging;
     },
 };

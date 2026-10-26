@@ -1,7 +1,6 @@
 # Node modules
 node_modules/
 
-package-lock.json
 
 
 # Logs
@@ -11,7 +10,6 @@ yarn-error.log*
 pnpm-debug.log*
 
 # Logs
-package-lock.json
      
 
     

@@ -1,13 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
+const upload = require('../middleware/imageUpload');
 const { createProduct, getProducts, getAllProducts, getProductById, updateProduct, deleteProduct, searchProducts } = require('../controllers/productsController');
 const { verifyAdminToken } = require('../middleware/authMiddleware');
 const tenantContext = require('../middleware/tenantContext');
 const requireActiveEntitlement = require('../middleware/requireActiveEntitlement');
 const prisma = require('../prisma/client');
-
-const upload = multer({ storage: multer.memoryStorage() });
 
 router.use(verifyAdminToken);
 
