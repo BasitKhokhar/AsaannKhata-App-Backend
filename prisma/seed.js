@@ -34,15 +34,36 @@ const SHOP_TYPES = [
 // CLOUD_SYNC (3 billing cycles). Editable afterward via the superadmin plan
 // CRUD API; this seed only creates rows that don't already exist, so a
 // redeploy never clobbers a value a superadmin has since tuned.
-const FREE_TRIAL_DAYS = parseInt(process.env.FREE_TRIAL_DAYS, 10) || 15;
+// 36,525 days is approximately 100 years. Existing plan rows are updated by
+// the free-plan duration migration; the seed still preserves later admin edits.
+const FREE_PLAN_DURATION_DAYS = 36525;
+const feature = (en, ur, hi) => ({ en, ur, hi });
+const OFFLINE_FEATURES = [
+    feature('Offline billing and khata records', 'آف لائن بلنگ اور کھاتہ ریکارڈ', 'ऑफ़लाइन बिलिंग और खाता रिकॉर्ड'),
+    feature('Product and stock tracking', 'مصنوعات اور اسٹاک کی نگرانی', 'उत्पाद और स्टॉक ट्रैकिंग'),
+    feature('Sales reports', 'فروخت کی رپورٹس', 'बिक्री रिपोर्ट'),
+];
+const CLOUD_FEATURES = [
+    ...OFFLINE_FEATURES,
+    feature('Cloud sync across devices', 'متعدد آلات پر کلاؤڈ سنک', 'कई डिवाइस पर क्लाउड सिंक'),
+    feature('Access your records on up to 5 devices', '5 آلات تک اپنے ریکارڈ تک رسائی', 'अधिकतम 5 डिवाइस पर अपने रिकॉर्ड देखें'),
+];
+const PRODUCT_ID_ENV = {
+    LIFETIME: 'REVENUECAT_LIFETIME_PRODUCT_ID',
+    CLOUD_SYNC_MONTHLY: 'REVENUECAT_CLOUD_SYNC_MONTHLY_PRODUCT_ID',
+    CLOUD_SYNC_SEMIANNUAL: 'REVENUECAT_CLOUD_SYNC_SEMIANNUAL_PRODUCT_ID',
+    CLOUD_SYNC_YEARLY: 'REVENUECAT_CLOUD_SYNC_YEARLY_PRODUCT_ID',
+};
 
 const SUBSCRIPTION_PLANS = [
     {
         code: 'FREE_TRIAL',
         name: 'Free Trial',
+        description: 'Keep your shop records on this device.',
+        features: [...OFFLINE_FEATURES, feature('Access on 1 device', '1 آلے پر رسائی', '1 डिवाइस पर एक्सेस')],
         tier: 'FREE_TRIAL',
         price: 0,
-        durationDays: FREE_TRIAL_DAYS,
+        durationDays: FREE_PLAN_DURATION_DAYS,
         isTrialPlan: true,
         cloudEnabled: false,
         offlineEnabled: true,
@@ -52,6 +73,8 @@ const SUBSCRIPTION_PLANS = [
     {
         code: 'LIFETIME',
         name: 'Lifetime (Offline)',
+        description: 'One-time purchase for offline access.',
+        features: [...OFFLINE_FEATURES, feature('Access on up to 2 devices', '2 آلات تک رسائی', 'अधिकतम 2 डिवाइस पर एक्सेस')],
         tier: 'LIFETIME',
         price: 0,
         isLifetime: true,
@@ -63,6 +86,8 @@ const SUBSCRIPTION_PLANS = [
     {
         code: 'CLOUD_SYNC_MONTHLY',
         name: 'Cloud Sync — Monthly',
+        description: 'Cloud sync billed monthly.',
+        features: CLOUD_FEATURES,
         tier: 'CLOUD_SYNC',
         billingCycle: 'MONTHLY',
         price: 0,
@@ -75,6 +100,8 @@ const SUBSCRIPTION_PLANS = [
     {
         code: 'CLOUD_SYNC_SEMIANNUAL',
         name: 'Cloud Sync — 6 Months',
+        description: 'Cloud sync billed every 6 months.',
+        features: CLOUD_FEATURES,
         tier: 'CLOUD_SYNC',
         billingCycle: 'SEMIANNUAL',
         price: 0,
@@ -87,6 +114,8 @@ const SUBSCRIPTION_PLANS = [
     {
         code: 'CLOUD_SYNC_YEARLY',
         name: 'Cloud Sync — Yearly',
+        description: 'Cloud sync billed yearly.',
+        features: CLOUD_FEATURES,
         tier: 'CLOUD_SYNC',
         billingCycle: 'YEARLY',
         price: 0,
@@ -111,9 +140,21 @@ async function seedShopTypes() {
 async function seedSubscriptionPlans() {
     for (const plan of SUBSCRIPTION_PLANS) {
         const existing = await prisma.subscriptionPlan.findUnique({ where: { code: plan.code } });
+        const configuredProductId = PRODUCT_ID_ENV[plan.code]
+            ? process.env[PRODUCT_ID_ENV[plan.code]]?.trim() || null : null;
         if (!existing) {
-            await prisma.subscriptionPlan.create({ data: plan });
+            await prisma.subscriptionPlan.create({ data: { ...plan, revenueCatProductId: configuredProductId } });
             console.log(`  + created SubscriptionPlan ${plan.code}`);
+        } else {
+            const update = {};
+            if (existing.features == null) update.features = plan.features;
+            if (existing.description == null) update.description = plan.description;
+            if (configuredProductId && existing.revenueCatProductId !== configuredProductId) {
+                update.revenueCatProductId = configuredProductId;
+            }
+            if (Object.keys(update).length) {
+                await prisma.subscriptionPlan.update({ where: { id: existing.id }, data: update });
+            }
         }
     }
 }

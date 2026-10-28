@@ -45,7 +45,7 @@ exports.register = async (req, res) => {
 
         const hashed = await bcrypt.hash(password, 10);
 
-        const { admin, shop } = await prisma.$transaction(async (tx) => {
+        const { admin, shop, accessToken, refreshToken } = await prisma.$transaction(async (tx) => {
             const admin = await tx.admin.create({
                 // adCoins: 10 mirrors the Admin.adCoins schema default — set
                 // explicitly here so the starter grant is obvious at the call
@@ -66,12 +66,12 @@ exports.register = async (req, res) => {
             await seedDefaultCategoriesForShop(tx, shop.id, shopType);
             await activateFreeTrial(tx, admin.id);
 
-            return { admin, shop };
-        });
+            const accessToken = generateAdminAccessToken(admin);
+            const refreshToken = generateAdminRefreshToken(admin);
+            await tx.admin.update({ where: { id: admin.id }, data: { refreshToken } });
 
-        const accessToken = generateAdminAccessToken(admin);
-        const refreshToken = generateAdminRefreshToken(admin);
-        await prisma.admin.update({ where: { id: admin.id }, data: { refreshToken } });
+            return { admin, shop, accessToken, refreshToken };
+        });
 
         res.status(201).json({
             message: 'Account created successfully',

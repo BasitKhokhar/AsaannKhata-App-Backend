@@ -24,7 +24,7 @@ NODE_ENV=production npm start
 
 Run behind a process supervisor. Preserve the `.env`, upload directory, and MySQL data across releases. Take a database backup before migrations and schedule ongoing backups. Check `GET /health` for process liveness and `GET /db-status` for database readiness. The latter gives a generic response on failure.
 
-The frontend's production EAS environment must set `EXPO_PUBLIC_API_BASE_URL` to the HTTPS API origin without an `/api` suffix. Rebuild the app after changing it. The Play review email and password variables are server-side operator placeholders: create an ordinary account through registration, verify it can sign in and access the needed screens, and enter its credentials in Play Console app access instructions. Do not add a reviewer login bypass or put the password in the mobile bundle. The initial trial expires; renew the review account's entitlement before it expires if reviewers need paid features.
+The frontend's production EAS environment must set `EXPO_PUBLIC_API_BASE_URL` to the HTTPS API origin without an `/api` suffix. Rebuild the app after changing it. The Play review email and password variables are server-side operator placeholders: create an ordinary account through registration, verify it can sign in and access the needed screens, and enter its credentials in Play Console app access instructions. Do not add a reviewer login bypass or put the password into the mobile bundle. The free plan defaults to 36,525 days (about 100 years); check the review account's entitlement if its plan has been changed through the superadmin API.
 
 ## Release gates still requiring verification
 

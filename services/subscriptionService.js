@@ -31,6 +31,10 @@ async function getActiveEntitlement(adminId) {
 
     return {
         subscriptionId: sub.id,
+        planName: sub.plan?.name ?? null,
+        startDate: sub.startDate,
+        billingCycle: sub.billingCycle,
+        paymentProvider: sub.paymentProvider,
         tier: sub.plan?.tier ?? null,
         planCode: sub.plan?.code ?? null,
         status: expired ? 'EXPIRED' : sub.status,
@@ -45,14 +49,14 @@ async function getActiveEntitlement(adminId) {
 
 // Used by registration: creates the initial FREE_TRIAL subscription for a
 // brand-new Admin. Duration comes from SubscriptionPlan.durationDays (itself
-// seeded once from FREE_TRIAL_DAYS, editable afterward via superadmin CRUD).
+// seeded at about 100 years, editable afterward via superadmin CRUD).
 async function activateFreeTrial(tx, adminId) {
     const plan = await tx.subscriptionPlan.findUnique({ where: { code: 'FREE_TRIAL' } });
     if (!plan) {
         throw new Error('FREE_TRIAL plan is not seeded — run prisma/seed.js');
     }
 
-    const durationDays = plan.durationDays ?? 15;
+    const durationDays = plan.durationDays ?? 36525;
     const expiryDate = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000);
 
     return tx.userSubscription.create({

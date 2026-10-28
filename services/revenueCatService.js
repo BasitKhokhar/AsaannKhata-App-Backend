@@ -29,7 +29,12 @@ function selectActivePurchase(subscriber, plans, now = Date.now()) {
     const planByProduct = new Map(plans.filter((p) => p.revenueCatProductId).map((p) => [p.revenueCatProductId, p]));
     const candidates = [];
 
-    for (const [productId, subscription] of Object.entries(subscriber?.subscriptions || {})) {
+    for (const [storeProductId, subscription] of Object.entries(subscriber?.subscriptions || {})) {
+        // RevenueCat's v1 subscriber snapshot keys Google Play subscriptions by
+        // their parent product, with the base plan in product_plan_identifier.
+        // The catalog and webhooks use the full product:basePlan identifier.
+        const productId = subscription.product_plan_identifier
+            ? `${storeProductId}:${subscription.product_plan_identifier}` : storeProductId;
         const plan = planByProduct.get(productId);
         if (!plan || plan.isActive === false) continue;
         const purchaseDate = parseDate(subscription.purchase_date);
@@ -102,7 +107,11 @@ async function reconcileFromSubscriber(adminId, event = null) {
             let subscription = null;
             if (selected) {
                 subscription = await tx.userSubscription.findFirst({
-                    where: { adminId: id, paymentProvider: 'REVENUECAT', productId: selected.productId },
+                    where: {
+                        adminId: id, paymentProvider: 'REVENUECAT', productId: selected.productId,
+                        status: { in: LIVE_STATUSES },
+                        OR: [{ expiryDate: null }, { expiryDate: { gt: new Date() } }],
+                    },
                     orderBy: { createdAt: 'desc' },
                 });
             }
@@ -124,6 +133,7 @@ async function reconcileFromSubscriber(adminId, event = null) {
                     expiryDate: selected.expiryDate,
                     cancelledAt: selected.cancelledAt,
                     billingCycle: selected.plan.billingCycle,
+                    ...(subscription ? {} : { startDate: selected.purchasedAt ? new Date(selected.purchasedAt) : new Date() }),
                     productId: selected.productId,
                     store: selected.store || event?.store || null,
                     revenueCatAppUserId: String(id),
@@ -132,6 +142,9 @@ async function reconcileFromSubscriber(adminId, event = null) {
                     offlineEnabled: selected.plan.offlineEnabled,
                     maxDevices: selected.plan.maxDevices,
                     isTrial: false,
+                    ...(event && PURCHASE_EVENTS.has(event.type) && typeof event.price_in_purchased_currency === 'number'
+                        ? { pricePaid: event.price_in_purchased_currency, priceCurrency: event.currency || selected.plan.currency }
+                        : {}),
                 };
                 subscription = subscription
                     ? await tx.userSubscription.update({ where: { id: subscription.id }, data: fields })
@@ -158,7 +171,9 @@ async function reconcileFromSubscriber(adminId, event = null) {
                             revenueCatEventId: event.id,
                             eventType: event.type,
                             rawPayload: event,
-                            paidAt: PURCHASE_EVENTS.has(event.type) ? new Date() : null,
+                            paidAt: PURCHASE_EVENTS.has(event.type)
+                                ? (event.purchased_at_ms && Number.isFinite(Number(event.purchased_at_ms))
+                                    ? new Date(Number(event.purchased_at_ms)) : new Date()) : null,
                         },
                     });
                 }

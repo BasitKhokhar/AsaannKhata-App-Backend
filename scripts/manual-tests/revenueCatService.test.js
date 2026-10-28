@@ -38,3 +38,20 @@ test('refunded and unknown products do not grant access', () => {
     assert.equal(selectActivePurchase({ subscriptions: { monthly: { ...base, refunded_at: '2026-02-01' } } }, plans), null);
     assert.equal(selectActivePurchase({ entitlements: { unknown: { ...base, product_identifier: 'unknown' } } }, plans), null);
 });
+
+test('Google Play base plans select distinct monthly, six month, and yearly catalog rows', () => {
+    const basePlans = [
+        { id: 3, code: 'MONTHLY', revenueCatProductId: 'cloud:monthly', isLifetime: false, isActive: true },
+        { id: 4, code: 'SIX_MONTH', revenueCatProductId: 'cloud:semiannual', isLifetime: false, isActive: true },
+        { id: 5, code: 'YEARLY', revenueCatProductId: 'cloud:yearly', isLifetime: false, isActive: true },
+    ];
+    for (const [basePlan, code] of [['monthly', 'MONTHLY'], ['semiannual', 'SIX_MONTH'], ['yearly', 'YEARLY']]) {
+        const subscriber = { subscriptions: { cloud: {
+            product_plan_identifier: basePlan, purchase_date: '2026-01-01T00:00:00Z',
+            expires_date: '2027-01-01T00:00:00Z',
+        } } };
+        const selected = selectActivePurchase(subscriber, basePlans, Date.parse('2026-06-01'));
+        assert.equal(selected.plan.code, code);
+        assert.equal(selected.productId, `cloud:${basePlan}`);
+    }
+});
