@@ -1,5 +1,6 @@
 // One-off data migration: grandfather every pre-existing Admin (created
-// before the subscription system existed) onto a permanent LIFETIME plan
+// before the subscription system existed) onto the permanent single-shop
+// Lifetime plan
 // (offline-only, no expiry, MANUAL provider) so they're never blocked by
 // the new entitlement checks. Safe to re-run — skips admins that already
 // have a subscription.
@@ -10,9 +11,9 @@ require('dotenv').config();
 const prisma = require('../client');
 
 async function main() {
-    const lifetimePlan = await prisma.subscriptionPlan.findUnique({ where: { code: 'LIFETIME' } });
+    const lifetimePlan = await prisma.subscriptionPlan.findUnique({ where: { code: 'LIFETIME_SINGLE_SHOP' } });
     if (!lifetimePlan) {
-        throw new Error('LIFETIME plan not found — run `node prisma/seed.js` first.');
+        throw new Error('LIFETIME_SINGLE_SHOP plan not found — run `node prisma/seed.js` first.');
     }
 
     const admins = await prisma.admin.findMany({
@@ -39,10 +40,10 @@ async function main() {
                 maxDevices: lifetimePlan.maxDevices,
             },
         });
-        console.log(`  + granted LIFETIME to admin #${admin.id} (${admin.email})`);
+        console.log(`  + granted LIFETIME_SINGLE_SHOP to admin #${admin.id} (${admin.email})`);
     }
 
-    console.log(`Backfilled ${admins.length} admin(s) onto the LIFETIME plan.`);
+    console.log(`Backfilled ${admins.length} admin(s) onto the LIFETIME_SINGLE_SHOP plan.`);
 }
 
 main()

@@ -50,16 +50,16 @@ device sync. The schema change is shipped as two migrations:
 
 5. **Seed the ShopType and SubscriptionPlan catalogs.** The migration already
    inserts the initial 13 `ShopType` rows (required for step 6's backfill),
-   so this mainly creates the 5 `SubscriptionPlan` rows. Safe to re-run —
-   only creates rows that don't already exist, so a superadmin's later edits
-   via the plan/shop-type CRUD API are never overwritten by a redeploy:
+   so this mainly upserts the 9 `SubscriptionPlan` rows. Safe to re-run; it
+   also migrates the legacy Lifetime and Cloud Sync plan codes while preserving
+   their IDs and existing subscription foreign keys:
    ```
    node prisma/seed.js
    ```
 
-6. **Grandfather existing Admin accounts onto the LIFETIME plan.** Every
+6. **Grandfather existing Admin accounts onto the LIFETIME_SINGLE_SHOP plan.** Every
    Admin that predates the subscription system gets a permanent, offline-only
-   `LIFETIME` subscription so they're never blocked by the new entitlement
+   `LIFETIME_SINGLE_SHOP` subscription so they're never blocked by the new entitlement
    checks. Safe to re-run — skips admins that already have a subscription:
    ```
    node prisma/migrate-scripts/backfillAdminSubscriptions.js

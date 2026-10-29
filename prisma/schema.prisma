@@ -490,7 +490,7 @@ model Expense {
 // Catalog / display shell — the plans a shop can subscribe to.
 model SubscriptionPlan {
   id          Int     @id @default(autoincrement())
-  code        String  @unique // "FREE_TRIAL" | "LIFETIME" | "CLOUD_SYNC_MONTHLY" | "CLOUD_SYNC_SEMIANNUAL" | "CLOUD_SYNC_YEARLY"
+  code        String  @unique // FREE_TRIAL, LIFETIME_* and BASIC_*/PRO_* billing variants
   name        String
   description String?
 

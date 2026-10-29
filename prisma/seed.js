@@ -30,12 +30,12 @@ const SHOP_TYPES = [
     { code: 'MOBILE_SHOP', label: 'Mobile Shop', defaultStockType: 'QUANTITY', sortOrder: 22 },
 ];
 
-// SubscriptionPlan catalog — the 3 packages: FREE_TRIAL, LIFETIME, and
-// CLOUD_SYNC (3 billing cycles). Editable afterward via the superadmin plan
-// CRUD API; this seed only creates rows that don't already exist, so a
-// redeploy never clobbers a value a superadmin has since tuned.
+// SubscriptionPlan catalog — Free, two offline Lifetime plans, and Basic/Pro
+// cloud plans with monthly, semiannual, and yearly billing. This seed owns the
+// baseline catalog and is idempotent: rerunning it updates the seeded rows to
+// the definitions below while preserving their IDs and subscription FKs.
 // 36,525 days is approximately 100 years. Existing plan rows are updated by
-// the free-plan duration migration; the seed still preserves later admin edits.
+// the free-plan duration migration and normalized whenever this seed runs.
 const FREE_PLAN_DURATION_DAYS = 36525;
 const feature = (en, ur, hi) => ({ en, ur, hi });
 const OFFLINE_FEATURES = [
@@ -43,23 +43,34 @@ const OFFLINE_FEATURES = [
     feature('Product and stock tracking', 'مصنوعات اور اسٹاک کی نگرانی', 'उत्पाद और स्टॉक ट्रैकिंग'),
     feature('Sales reports', 'فروخت کی رپورٹس', 'बिक्री रिपोर्ट'),
 ];
-const CLOUD_FEATURES = [
+const BASIC_FEATURES = [
     ...OFFLINE_FEATURES,
-    feature('Cloud sync across devices', 'متعدد آلات پر کلاؤڈ سنک', 'कई डिवाइस पर क्लाउड सिंक'),
+    feature('Cloud backup and synchronization', 'کلاؤڈ بیک اپ اور سنکرونائزیشن', 'क्लाउड बैकअप और सिंक्रोनाइज़ेशन'),
+    feature('Access your records on up to 2 devices', '2 آلات تک اپنے ریکارڈ تک رسائی', 'अधिकतम 2 डिवाइस पर अपने रिकॉर्ड देखें'),
+];
+const PRO_FEATURES = [
+    feature('Everything included in Basic', 'بیسک پلان کی تمام خصوصیات', 'बेसिक प्लान की सभी सुविधाएं'),
+    feature('Cloud backup and synchronization', 'کلاؤڈ بیک اپ اور سنکرونائزیشن', 'क्लाउड बैकअप और सिंक्रोनाइज़ेशन'),
+    feature('Detailed product and category analytics', 'مصنوعات اور کیٹیگری کی تفصیلی تجزیات', 'विस्तृत उत्पाद और श्रेणी विश्लेषण'),
+    feature('Profit trend reporting', 'منافع کے رجحان کی رپورٹس', 'लाभ रुझान रिपोर्टिंग'),
     feature('Access your records on up to 5 devices', '5 آلات تک اپنے ریکارڈ تک رسائی', 'अधिकतम 5 डिवाइस पर अपने रिकॉर्ड देखें'),
 ];
-const PRODUCT_ID_ENV = {
-    LIFETIME: 'REVENUECAT_LIFETIME_PRODUCT_ID',
-    CLOUD_SYNC_MONTHLY: 'REVENUECAT_CLOUD_SYNC_MONTHLY_PRODUCT_ID',
-    CLOUD_SYNC_SEMIANNUAL: 'REVENUECAT_CLOUD_SYNC_SEMIANNUAL_PRODUCT_ID',
-    CLOUD_SYNC_YEARLY: 'REVENUECAT_CLOUD_SYNC_YEARLY_PRODUCT_ID',
+const PRODUCT_IDS = {
+    LIFETIME_SINGLE_SHOP: { env: 'REVENUECAT_LIFETIME_SINGLE_SHOP_PRODUCT_ID', fallback: 'lifetime_offline_single_shop' },
+    LIFETIME_MULTI_SHOP: { env: 'REVENUECAT_LIFETIME_MULTI_SHOP_PRODUCT_ID', fallback: 'lifetime_offline_multi_shop' },
+    BASIC_MONTHLY: { env: 'REVENUECAT_BASIC_MONTHLY_PRODUCT_ID', fallback: 'asaandukaan_basic:monthly' },
+    BASIC_SEMIANNUAL: { env: 'REVENUECAT_BASIC_SEMIANNUAL_PRODUCT_ID', fallback: 'asaandukaan_basic:six-month' },
+    BASIC_YEARLY: { env: 'REVENUECAT_BASIC_YEARLY_PRODUCT_ID', fallback: 'asaandukaan_basic:yearly' },
+    PRO_MONTHLY: { env: 'REVENUECAT_PRO_MONTHLY_PRODUCT_ID', fallback: 'asaandukaan_pro:monthly' },
+    PRO_SEMIANNUAL: { env: 'REVENUECAT_PRO_SEMIANNUAL_PRODUCT_ID', fallback: 'asaandukaan_pro:six-month' },
+    PRO_YEARLY: { env: 'REVENUECAT_PRO_YEARLY_PRODUCT_ID', fallback: 'asaandukaan_pro:yearly' },
 };
 
 const SUBSCRIPTION_PLANS = [
     {
         code: 'FREE_TRIAL',
-        name: 'Free Trial',
-        description: 'Keep your shop records on this device.',
+        name: 'Free Plan',
+        description: 'Core bookkeeping for getting started.',
         features: [...OFFLINE_FEATURES, feature('Access on 1 device', '1 آلے پر رسائی', '1 डिवाइस पर एक्सेस')],
         tier: 'FREE_TRIAL',
         price: 0,
@@ -71,23 +82,88 @@ const SUBSCRIPTION_PLANS = [
         sortOrder: 1,
     },
     {
-        code: 'LIFETIME',
-        name: 'Lifetime (Offline)',
-        description: 'One-time purchase for offline access.',
-        features: [...OFFLINE_FEATURES, feature('Access on up to 2 devices', '2 آلات تک رسائی', 'अधिकतम 2 डिवाइस पर एक्सेस')],
+        code: 'LIFETIME_SINGLE_SHOP',
+        name: 'Lifetime Single Shop',
+        description: 'One-time purchase for one shop with offline access.',
+        features: [
+            feature('Lifetime offline access', 'تاحیات آف لائن رسائی', 'लाइफटाइम ऑफलाइन एक्सेस'),
+            feature('One shop', 'ایک دکان', 'एक दुकान'),
+            ...OFFLINE_FEATURES,
+            feature('No recurring payment', 'کوئی بار بار ادائیگی نہیں', 'कोई आवर्ती भुगतान नहीं'),
+        ],
+        tier: 'LIFETIME',
+        price: 0,
+        isLifetime: true,
+        cloudEnabled: false,
+        offlineEnabled: true,
+        maxDevices: 1,
+        sortOrder: 10,
+    },
+    {
+        code: 'LIFETIME_MULTI_SHOP',
+        name: 'Lifetime Multi Shop',
+        description: 'One-time purchase for multiple shops with offline access.',
+        features: [
+            feature('Lifetime offline access', 'تاحیات آف لائن رسائی', 'लाइफटाइम ऑफलाइन एक्सेस'),
+            feature('Multiple shops', 'متعدد دکانیں', 'कई दुकानें'),
+            ...OFFLINE_FEATURES,
+            feature('No recurring payment', 'کوئی بار بار ادائیگی نہیں', 'कोई आवर्ती भुगतान नहीं'),
+        ],
         tier: 'LIFETIME',
         price: 0,
         isLifetime: true,
         cloudEnabled: false,
         offlineEnabled: true,
         maxDevices: 2,
-        sortOrder: 2,
+        sortOrder: 11,
     },
     {
-        code: 'CLOUD_SYNC_MONTHLY',
-        name: 'Cloud Sync — Monthly',
-        description: 'Cloud sync billed monthly.',
-        features: CLOUD_FEATURES,
+        code: 'BASIC_MONTHLY',
+        name: 'Basic',
+        description: 'Essential cloud backup and sync.',
+        features: BASIC_FEATURES,
+        tier: 'CLOUD_SYNC',
+        billingCycle: 'MONTHLY',
+        price: 0,
+        isRecurring: true,
+        cloudEnabled: true,
+        offlineEnabled: true,
+        maxDevices: 2,
+        sortOrder: 20,
+    },
+    {
+        code: 'BASIC_SEMIANNUAL',
+        name: 'Basic',
+        description: 'Essential cloud backup and sync.',
+        features: BASIC_FEATURES,
+        tier: 'CLOUD_SYNC',
+        billingCycle: 'SEMIANNUAL',
+        price: 0,
+        isRecurring: true,
+        cloudEnabled: true,
+        offlineEnabled: true,
+        maxDevices: 2,
+        sortOrder: 21,
+    },
+    {
+        code: 'BASIC_YEARLY',
+        name: 'Basic',
+        description: 'Essential cloud backup and sync.',
+        features: BASIC_FEATURES,
+        tier: 'CLOUD_SYNC',
+        billingCycle: 'YEARLY',
+        price: 0,
+        isRecurring: true,
+        cloudEnabled: true,
+        offlineEnabled: true,
+        maxDevices: 2,
+        sortOrder: 22,
+    },
+    {
+        code: 'PRO_MONTHLY',
+        name: 'Pro',
+        description: 'Advanced cloud reporting and multi-device access.',
+        features: PRO_FEATURES,
         tier: 'CLOUD_SYNC',
         billingCycle: 'MONTHLY',
         price: 0,
@@ -95,13 +171,13 @@ const SUBSCRIPTION_PLANS = [
         cloudEnabled: true,
         offlineEnabled: true,
         maxDevices: 5,
-        sortOrder: 3,
+        sortOrder: 30,
     },
     {
-        code: 'CLOUD_SYNC_SEMIANNUAL',
-        name: 'Cloud Sync — 6 Months',
-        description: 'Cloud sync billed every 6 months.',
-        features: CLOUD_FEATURES,
+        code: 'PRO_SEMIANNUAL',
+        name: 'Pro',
+        description: 'Advanced cloud reporting and multi-device access.',
+        features: PRO_FEATURES,
         tier: 'CLOUD_SYNC',
         billingCycle: 'SEMIANNUAL',
         price: 0,
@@ -109,13 +185,13 @@ const SUBSCRIPTION_PLANS = [
         cloudEnabled: true,
         offlineEnabled: true,
         maxDevices: 5,
-        sortOrder: 4,
+        sortOrder: 31,
     },
     {
-        code: 'CLOUD_SYNC_YEARLY',
-        name: 'Cloud Sync — Yearly',
-        description: 'Cloud sync billed yearly.',
-        features: CLOUD_FEATURES,
+        code: 'PRO_YEARLY',
+        name: 'Pro',
+        description: 'Advanced cloud reporting and multi-device access.',
+        features: PRO_FEATURES,
         tier: 'CLOUD_SYNC',
         billingCycle: 'YEARLY',
         price: 0,
@@ -123,9 +199,18 @@ const SUBSCRIPTION_PLANS = [
         cloudEnabled: true,
         offlineEnabled: true,
         maxDevices: 5,
-        sortOrder: 5,
+        sortOrder: 32,
     },
 ];
+
+const LEGACY_PLAN_CODES = {
+    // Match the old catalog's two-device Lifetime and five-device Cloud Sync
+    // entitlements so rerunning the seed never downgrades an existing owner.
+    LIFETIME: 'LIFETIME_MULTI_SHOP',
+    CLOUD_SYNC_MONTHLY: 'PRO_MONTHLY',
+    CLOUD_SYNC_SEMIANNUAL: 'PRO_SEMIANNUAL',
+    CLOUD_SYNC_YEARLY: 'PRO_YEARLY',
+};
 
 async function seedShopTypes() {
     for (const shopType of SHOP_TYPES) {
@@ -138,24 +223,47 @@ async function seedShopTypes() {
 }
 
 async function seedSubscriptionPlans() {
-    for (const plan of SUBSCRIPTION_PLANS) {
-        const existing = await prisma.subscriptionPlan.findUnique({ where: { code: plan.code } });
-        const configuredProductId = PRODUCT_ID_ENV[plan.code]
-            ? process.env[PRODUCT_ID_ENV[plan.code]]?.trim() || null : null;
-        if (!existing) {
-            await prisma.subscriptionPlan.create({ data: { ...plan, revenueCatProductId: configuredProductId } });
-            console.log(`  + created SubscriptionPlan ${plan.code}`);
-        } else {
-            const update = {};
-            if (existing.features == null) update.features = plan.features;
-            if (existing.description == null) update.description = plan.description;
-            if (configuredProductId && existing.revenueCatProductId !== configuredProductId) {
-                update.revenueCatProductId = configuredProductId;
-            }
-            if (Object.keys(update).length) {
-                await prisma.subscriptionPlan.update({ where: { id: existing.id }, data: update });
-            }
+    for (const [legacyCode, replacementCode] of Object.entries(LEGACY_PLAN_CODES)) {
+        const [legacy, replacement] = await Promise.all([
+            prisma.subscriptionPlan.findUnique({ where: { code: legacyCode } }),
+            prisma.subscriptionPlan.findUnique({ where: { code: replacementCode } }),
+        ]);
+        if (legacy && !replacement) {
+            await prisma.subscriptionPlan.update({ where: { id: legacy.id }, data: { code: replacementCode } });
+            console.log(`  ~ migrated SubscriptionPlan ${legacyCode} -> ${replacementCode}`);
+        } else if (legacy && replacement) {
+            await prisma.subscriptionPlan.update({
+                where: { id: legacy.id },
+                data: { isActive: false, revenueCatProductId: null },
+            });
+            console.log(`  ~ deactivated duplicate legacy SubscriptionPlan ${legacyCode}`);
         }
+    }
+
+    for (const plan of SUBSCRIPTION_PLANS) {
+        const { code, ...definedPlanData } = plan;
+        const planData = {
+            billingCycle: null,
+            currency: 'PKR',
+            durationDays: null,
+            isLifetime: false,
+            isRecurring: false,
+            isTrialPlan: false,
+            cloudEnabled: false,
+            offlineEnabled: true,
+            maxDevices: 1,
+            ...definedPlanData,
+        };
+        const productConfig = PRODUCT_IDS[code];
+        const revenueCatProductId = productConfig
+            ? process.env[productConfig.env]?.trim() || productConfig.fallback
+            : null;
+        await prisma.subscriptionPlan.upsert({
+            where: { code },
+            create: { code, ...planData, revenueCatProductId },
+            update: { ...planData, revenueCatProductId, isActive: true },
+        });
+        console.log(`  = seeded SubscriptionPlan ${code}`);
     }
 }
 
