@@ -1,4 +1,5 @@
 const syncService = require('../services/syncService');
+const bucketStorage = require('../utils/bucketStorage');
 
 exports.registerDevice = async (req, res) => {
     try {
@@ -53,6 +54,23 @@ exports.pushBills = makePushHandler(syncService.pushBills);
 exports.pushCustomers = makePushHandler(syncService.pushCustomers);
 exports.pushCustomerPayments = makePushHandler(syncService.pushCustomerPayments);
 exports.pushExpenses = makePushHandler(syncService.pushExpenses);
+
+exports.uploadImage = async (req, res) => {
+    if (!req.file?.buffer) {
+        return res.status(400).json({ message: 'An image file is required' });
+    }
+
+    try {
+        const imageUrl = await bucketStorage.uploadImageFromBuffer(req.file.buffer, req.file.mimetype);
+        res.status(201).json({ imageUrl });
+    } catch (err) {
+        if (err.message === 'Invalid image size' || err.message === 'Unsupported image type') {
+            return res.status(400).json({ message: err.message });
+        }
+        console.error('Sync Image Upload Error:', err);
+        res.status(500).json({ message: 'Image upload failed' });
+    }
+};
 
 exports.status = async (req, res) => {
     try {

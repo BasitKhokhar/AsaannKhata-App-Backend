@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const upload = require('../middleware/imageUpload');
+const upload = require('../middleware/productImageUpload');
 const { createProduct, getProducts, getAllProducts, getProductById, updateProduct, deleteProduct, searchProducts } = require('../controllers/productsController');
 const { verifyAdminToken } = require('../middleware/authMiddleware');
 const tenantContext = require('../middleware/tenantContext');

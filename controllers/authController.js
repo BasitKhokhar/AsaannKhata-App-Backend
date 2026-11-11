@@ -8,7 +8,7 @@ const { seedDefaultCategoriesForShop } = require('../services/shopTypeService');
 const { sendPasswordResetCode } = require('../services/mailService');
 
 const validEmail = (value) => typeof value === 'string' && value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-const validPassword = (value) => typeof value === 'string' && value.length >= 12 && value.length <= 128;
+const validPassword = (value) => typeof value === 'string' && value.length >= 8 && value.length <= 128;
 const resetHash = (adminId, code) => crypto.createHmac('sha256', process.env.REFRESH_SECRET).update(`${adminId}:${code}`).digest('hex');
 
 // -------------------

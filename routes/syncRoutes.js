@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const syncController = require('../controllers/syncController');
+const productImageUpload = require('../middleware/productImageUpload');
 const { verifyAdminToken } = require('../middleware/authMiddleware');
 const tenantContext = require('../middleware/tenantContext');
 const resolveEntitlement = require('../middleware/resolveEntitlement');
@@ -24,6 +25,7 @@ router.post('/devices/register', syncController.registerDevice);
 router.get('/status', syncController.status);
 
 router.get('/pull', requireDeviceRegistered, syncController.pull);
+router.post('/images/upload', requireDeviceRegistered, requireSyncQuota, productImageUpload.single('image'), syncController.uploadImage);
 router.post('/push/categories', requireDeviceRegistered, requireSyncQuota, syncController.pushCategories);
 router.post('/push/products', requireDeviceRegistered, requireSyncQuota, syncController.pushProducts);
 router.post('/push/stock-adjustments', requireDeviceRegistered, requireSyncQuota, syncController.pushStockAdjustments);
