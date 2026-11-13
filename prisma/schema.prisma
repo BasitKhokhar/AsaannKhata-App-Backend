@@ -150,6 +150,8 @@ model Shop {
   admin    Admin    @relation(fields: [adminId], references: [id])
   shopType ShopType @relation(fields: [shopTypeId], references: [id])
 
+  receiptProfile     ReceiptProfile?
+  productBarcodes    ProductBarcode[]
   categories         Category[]
   products           Product[]
   bills              Bill[]
@@ -205,6 +207,9 @@ model Product {
   shopId     Int
   categoryId Int?
 
+  barcode String? @db.VarChar(128)
+  looseBarcode String? @db.VarChar(128)
+  barcodes ProductBarcode[]
   name  String
   image String?
 
@@ -262,6 +267,7 @@ model Product {
 
 model Bill {
   id     Int @id @default(autoincrement())
+  receiptSnapshot Json?
   shopId Int
 
   customerName  String
@@ -636,4 +642,23 @@ model Notification {
   admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
 
   @@index([shopId, adminId, isRead])
+}
+
+model ProductBarcode {
+  shopId Int
+  code String @db.VarChar(128)
+  productId Int
+  unit String @db.VarChar(16)
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  @@id([shopId, code])
+  @@index([productId])
+}
+
+model ReceiptProfile {
+  shopId Int @id
+  config Json
+  version Int @default(1)
+  updatedAt DateTime @updatedAt
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
 }

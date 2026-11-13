@@ -80,3 +80,10 @@ Both migrations are additive/backfill-only — nothing in
 there's no destructive step to reverse. If something goes wrong mid-deploy,
 restore from the backup taken in step 1 rather than attempting a partial
 rollback.
+
+
+## Barcode and receipt rollout (2026-11-06)
+
+`20261106000000_barcode_receipts` adds product barcode/looseBarcode columns, a case-sensitive shop/code unique ProductBarcode registry, ReceiptProfile versions, and Bill.receiptSnapshot JSON. Product and registry writes must remain in one transaction. Deploy this migration using the normal backup and `prisma migrate deploy` workflow, regenerate Prisma Client, and deploy the API before distributing the matching mobile binary. The mobile client checks `GET /sync/receipt-profile` for `barcodeReceiptsVersion: 1` before pushing new data. Never advertise that capability on an older schema.
+
+The receipt endpoint uses optimistic profile versions; HTTP 409 requires user resolution. Older product clients preserve omitted barcode fields. Receipt settings accept 50/55/58/80 mm and A4, while hardware connection preferences stay on the phone. This change has not applied any live migration.
