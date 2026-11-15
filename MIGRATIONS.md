@@ -80,3 +80,7 @@ Both migrations are additive/backfill-only — nothing in
 there's no destructive step to reverse. If something goes wrong mid-deploy,
 restore from the backup taken in step 1 rather than attempting a partial
 rollback.
+
+# App popup campaigns (2026-11-15)
+
+Migration `20261115000000_add_app_popups` creates the remotely managed home-popup campaign table and a nullable unique active slot that enforces one active campaign. Run `npx prisma migrate deploy` and restart the API before enabling the dashboard page or releasing the mobile client.

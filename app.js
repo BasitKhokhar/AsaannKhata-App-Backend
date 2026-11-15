@@ -21,6 +21,7 @@ const webhookRoutes = require('./routes/webhookRoutes');
 const syncRoutes = require('./routes/syncRoutes');
 const adsRoutes = require('./routes/adsRoutes');
 const notificationsRoutes = require('./routes/notificationsRoutes');
+const engagementRoutes = require('./routes/engagementRoutes');
 
 const app = express();
 const proxyHops = Number(process.env.TRUST_PROXY_HOPS || 0);
@@ -62,6 +63,7 @@ app.use('/webhooks', webhookRoutes);
 app.use('/sync', syncRoutes);
 app.use('/ads', adsRoutes);
 app.use('/notifications', notificationsRoutes);
+app.use('/engagement', engagementRoutes);
 
 app.get('/', (req, res) => res.json({ name: 'AsaanKhata API', status: 'ok' }));
 app.get('/health', (req, res) => res.json({ status: 'ok' }));

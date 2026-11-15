@@ -11,6 +11,7 @@ const {
 } = require('../controllers/superAdminController');
 const { verifySuperAdminToken } = require('../middleware/authMiddleware');
 const platform = require('../controllers/platformDashboardController');
+const engagement = require('../controllers/engagementController');
 
 router.use(verifySuperAdminToken);
 
@@ -24,6 +25,12 @@ router.get('/owners', platform.owners);
 router.get('/owners/:id', platform.owner);
 router.get('/payments', platform.payments);
 router.get('/rewards', platform.rewards);
+
+// Remote home-popup campaigns. Only superadmins can manage them.
+router.get('/app-popups', engagement.list);
+router.post('/app-popups', engagement.save);
+router.put('/app-popups/:id', engagement.save);
+router.delete('/app-popups/:id', engagement.remove);
 
 // Plan CRUD
 router.post('/plans/add', createPlan);

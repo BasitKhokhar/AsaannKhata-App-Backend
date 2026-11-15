@@ -637,3 +637,24 @@ model Notification {
 
   @@index([shopId, adminId, isRead])
 }
+
+// Remote home-screen content. The mobile app renders a fixed native layout;
+// server-provided HTML and scripts are never accepted.
+model AppPopup {
+  id          Int      @id @default(autoincrement())
+  type        String   @db.VarChar(20)
+  active      Boolean  @default(false)
+  // Active rows use 1 and inactive rows use NULL. MySQL permits multiple
+  // NULL values, so this unique slot guarantees at most one active campaign.
+  activeSlot  Int?     @unique
+  title       String   @default("") @db.VarChar(160)
+  message     String   @db.Text
+  imageUrl    String?  @db.Text
+  videoUrl    String?  @db.Text
+  actionUrl   String?  @db.Text
+  buttonLabel String   @default("") @db.VarChar(60)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([active, updatedAt])
+}
