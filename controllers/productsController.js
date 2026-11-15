@@ -1,3 +1,4 @@
+const { barcodeFields, syncProductBarcodes } = require('../services/productBarcodes');
 const prisma = require('../prisma/client');
 const { convertToCm, calculateAreaCm2, getAreaConversionFactor, getLengthConversionFactor } = require('../utils/unitConverter');
 const bucketStorage = require('../utils/bucketStorage');
@@ -55,6 +56,7 @@ exports.createProduct = async (req, res) => {
 
             const normalizedType = normalizeStockType(stockType);
             data.stockType = normalizedType;
+            Object.assign(data, barcodeFields({ ...req.body, stockType: normalizedType }));
 
             if (normalizedType === 'AREA') {
                 const widthCm = convertToCm(parseFloat(sheetWidth), unit);
@@ -92,6 +94,7 @@ exports.createProduct = async (req, res) => {
 
             const result = await prisma.$transaction(async (tx) => {
                 const product = await tx.product.create({ data });
+                await syncProductBarcodes(tx, product);
 
                 const initialQty = normalizedType === 'PACK'
                     ? (parseFloat(stockPacks) || 0) * (parseInt(packSize) || 1) + (parseFloat(stockLooseUnits) || 0)
@@ -248,6 +251,7 @@ exports.updateProduct = async (req, res) => {
 
             const currentType = stockType ? normalizeStockType(stockType) : existingProduct.stockType;
             updateData.stockType = currentType;
+            Object.assign(updateData, barcodeFields({ ...req.body, stockType: currentType }, existingProduct));
 
             let stockLogQty = 0;
             let stockLogDirection = 0;
@@ -315,6 +319,7 @@ exports.updateProduct = async (req, res) => {
 
             const result = await prisma.$transaction(async (tx) => {
                 const product = await tx.product.update({ where: { id: productId, shopId }, data: updateData });
+                await syncProductBarcodes(tx, product);
 
                 if (stockLogQty !== 0) {
                     await tx.stockTransaction.create({
@@ -349,9 +354,9 @@ exports.deleteProduct = async (req, res) => {
         const existing = await prisma.product.findFirst({ where: { id: productId, shopId } });
         if (!existing) return res.status(404).json({ message: 'Product not found' });
 
-        await prisma.product.update({
-            where: { id: productId, shopId },
-            data: { isDeleted: true, deletedAt: new Date() },
+        await prisma.$transaction(async (tx) => {
+            const product = await tx.product.update({ where: { id: productId, shopId }, data: { isDeleted: true, deletedAt: new Date() } });
+            await syncProductBarcodes(tx, product);
         });
 
         res.json({ message: 'Product deleted successfully' });

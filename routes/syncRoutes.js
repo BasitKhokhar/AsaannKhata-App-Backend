@@ -34,4 +34,8 @@ router.post('/push/customers', requireDeviceRegistered, requireSyncQuota, syncCo
 router.post('/push/customer-payments', requireDeviceRegistered, requireSyncQuota, syncController.pushCustomerPayments);
 router.post('/push/expenses', requireDeviceRegistered, requireSyncQuota, syncController.pushExpenses);
 
+const receiptProfile = require('../controllers/receiptProfileController');
+router.get('/receipt-profile', requireDeviceRegistered, receiptProfile.get);
+router.put('/receipt-profile', requireDeviceRegistered, requireSyncQuota, receiptProfile.put);
+
 module.exports = router;

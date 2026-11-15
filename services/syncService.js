@@ -1,3 +1,5 @@
+const { barcodeFields, syncProductBarcodes } = require('./productBarcodes');
+const { receiptSnapshot } = require('./receiptProfiles');
 const prisma = require('../prisma/client');
 const { adjustCustomerBalance } = require('./customerService');
 const { normalizePaymentMethod } = require('../utils/paymentMethod');
@@ -162,10 +164,10 @@ async function pushProducts(tenant, deviceId, operations) {
 
             if (op.operationType === 'DELETE') {
                 if (existing) {
-                    await prisma.product.update({
+                    await prisma.$transaction(async (tx) => { const product = await tx.product.update({
                         where: { id: existing.id, shopId: tenant.shopId },
                         data: { isDeleted: true, deletedAt: new Date(), deviceId },
-                    });
+                    }); await syncProductBarcodes(tx, product); });
                 }
                 results.push({ clientId: op.clientId, status: 'deleted' });
                 continue;
@@ -180,6 +182,7 @@ async function pushProducts(tenant, deviceId, operations) {
             // edit (name/price change) must never silently zero out stock that was
             // moved through /sync/push/stock-adjustments in the meantime.
             const data = {
+                ...barcodeFields(p, existing || {}),
                 shopId: tenant.shopId,
                 categoryId: p.categoryId ?? null,
                 name: p.name,
@@ -204,13 +207,13 @@ async function pushProducts(tenant, deviceId, operations) {
             if (p.stockLooseUnits !== undefined) data.stockLooseUnits = p.stockLooseUnits;
 
             if (!existing) {
-                const created = await prisma.product.create({ data });
+                const created = await prisma.$transaction(async (tx) => { const product = await tx.product.create({ data }); await syncProductBarcodes(tx, product); return product; });
                 results.push({ clientId: op.clientId, serverId: created.id, status: 'created' });
                 continue;
             }
 
             const conflict = !!op.baseUpdatedAt && new Date(op.baseUpdatedAt) < existing.updatedAt;
-            const updated = await prisma.product.update({ where: { id: existing.id, shopId: tenant.shopId }, data });
+            const updated = await prisma.$transaction(async (tx) => { const product = await tx.product.update({ where: { id: existing.id, shopId: tenant.shopId }, data }); await syncProductBarcodes(tx, product); return product; });
             results.push({ clientId: op.clientId, serverId: updated.id, status: conflict ? 'conflict' : 'updated' });
         } catch (err) {
             results.push({ clientId: op.clientId, status: 'error', error: err.message });
@@ -294,6 +297,7 @@ async function pushBills(tenant, deviceId, operations) {
                     data: {
                         shopId: tenant.shopId,
                         customerId,
+                        ...(b.receiptSnapshot ? { receiptSnapshot: receiptSnapshot(b.receiptSnapshot) } : {}),
                         customerName: b.customerName,
                         customerPhone: b.customerPhone || null,
                         subtotal: parseFloat(b.subtotal) || 0,
