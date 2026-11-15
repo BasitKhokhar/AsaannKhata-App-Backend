@@ -15,6 +15,8 @@ function billItemProfit(item) {
         factor = item.totalArea || 0;
     } else if (item.stockType === 'LENGTH') {
         factor = item.lengthCm || 0;
+    } else if (item.stockType === 'LIQUID') {
+        factor = item.volumeMl || 0;
     } else {
         factor = item.quantity || 0;
     }
@@ -95,7 +97,7 @@ async function getSalesByProduct({ shopId, startDate, endDate, limit = 10 }) {
             }
             byProduct[key].revenue += item.total || 0;
             byProduct[key].profit += billItemProfit(item);
-            byProduct[key].quantitySold += item.quantity || item.packQuantity || item.totalArea || item.lengthCm || 0;
+            byProduct[key].quantitySold += item.quantity || item.packQuantity || item.totalArea || item.lengthCm || item.volumeMl || 0;
         }
     }
 

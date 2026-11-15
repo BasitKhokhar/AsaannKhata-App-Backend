@@ -10,6 +10,10 @@ const STOCK_TYPE_ALIASES = {
     lengthbased: 'LENGTH',
     pack: 'PACK',
     packbased: 'PACK',
+    liquid: 'LIQUID',
+    liquidbased: 'LIQUID',
+    litre: 'LIQUID',
+    liter: 'LIQUID',
 };
 
 function normalizeStockType(input) {

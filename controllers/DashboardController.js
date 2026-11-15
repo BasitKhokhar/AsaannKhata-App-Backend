@@ -9,6 +9,8 @@ function stockUnitsFor(product) {
             return product.stockLengthCm || 0;
         case 'PACK':
             return (product.stockPacks || 0) * (product.packSize || 1) + (product.stockLooseUnits || 0);
+        case 'LIQUID':
+            return product.stockVolumeMl || 0;
         default:
             return product.stockQuantity || 0;
     }
@@ -22,6 +24,8 @@ function billItemUnitsFor(item) {
             return item.lengthCm || 0;
         case 'PACK':
             return item.total || 0; // pack-mode cost/sale already priced per whole line in `total`
+        case 'LIQUID':
+            return item.volumeMl || 0;
         default:
             return item.quantity || 0;
     }
@@ -85,6 +89,7 @@ exports.getDashboardStats = async (req, res) => {
                 stockQuantity: true,
                 stockAreaCm2: true,
                 stockLengthCm: true,
+                stockVolumeMl: true,
                 stockPacks: true,
                 stockLooseUnits: true,
                 packSize: true,

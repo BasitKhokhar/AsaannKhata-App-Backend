@@ -39,6 +39,12 @@ async function applyBillItemStock(tx, product, item, direction) {
             quantityForLog = packQty * (product.packSize || 1) + looseQty;
             break;
         }
+        case 'LIQUID': {
+            const volumeMl = parseFloat(item.volumeMl) || 0;
+            updateData.stockVolumeMl = { [sign]: volumeMl };
+            quantityForLog = volumeMl;
+            break;
+        }
         default: { // QUANTITY
             const qty = parseFloat(item.quantity) || 0;
             updateData.stockQuantity = { [sign]: qty };

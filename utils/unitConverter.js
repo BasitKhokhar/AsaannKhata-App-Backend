@@ -31,9 +31,19 @@ function getLengthConversionFactor(unit) {
   return convertToCm(1, unit); // cm per unit — for LENGTH-mode price normalization
 }
 
+function convertToMl(value, unit) {
+  return unit === 'liter' || unit === 'litre' ? value * 1000 : value;
+}
+
+function getVolumeConversionFactor(unit) {
+  return unit === 'liter' || unit === 'litre' ? 1000 : 1;
+}
+
 module.exports = {
   convertToCm,
   calculateAreaCm2,
   getAreaConversionFactor,
   getLengthConversionFactor,
+  convertToMl,
+  getVolumeConversionFactor,
 };

@@ -203,6 +203,7 @@ async function pushProducts(tenant, deviceId, operations) {
             if (p.stockQuantity !== undefined) data.stockQuantity = p.stockQuantity;
             if (p.stockAreaCm2 !== undefined) data.stockAreaCm2 = p.stockAreaCm2;
             if (p.stockLengthCm !== undefined) data.stockLengthCm = p.stockLengthCm;
+            if (p.stockVolumeMl !== undefined) data.stockVolumeMl = p.stockVolumeMl;
             if (p.stockPacks !== undefined) data.stockPacks = p.stockPacks;
             if (p.stockLooseUnits !== undefined) data.stockLooseUnits = p.stockLooseUnits;
 
@@ -339,6 +340,7 @@ async function pushBills(tenant, deviceId, operations) {
                             unitArea: item.unitArea ?? null,
                             totalArea: item.totalArea ?? null,
                             lengthCm: item.lengthCm ?? null,
+                            volumeMl: item.volumeMl ?? null,
                             pricePerUnit: parseFloat(item.pricePerUnit) || 0,
                             total: parseFloat(item.total) || 0,
                         },
@@ -352,6 +354,8 @@ async function pushBills(tenant, deviceId, operations) {
                             ? parseFloat(item.lengthCm) || 0
                             : item.stockType === 'PACK'
                                 ? (parseFloat(item.packQuantity) || 0) * (product.packSize || 1) + (parseFloat(item.looseQuantity) || 0)
+                                : item.stockType === 'LIQUID'
+                                    ? parseFloat(item.volumeMl) || 0
                                 : parseFloat(item.quantity) || 0;
 
                     await tx.stockTransaction.create({

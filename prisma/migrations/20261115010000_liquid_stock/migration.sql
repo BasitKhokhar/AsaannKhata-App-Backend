@@ -1,0 +1,7 @@
+-- Extend every StockType column before data using LIQUID is written.
+ALTER TABLE `ShopType` MODIFY `defaultStockType` ENUM('QUANTITY', 'AREA', 'LENGTH', 'PACK', 'LIQUID') NOT NULL DEFAULT 'QUANTITY';
+ALTER TABLE `Product` MODIFY `stockType` ENUM('QUANTITY', 'AREA', 'LENGTH', 'PACK', 'LIQUID') NOT NULL DEFAULT 'QUANTITY';
+ALTER TABLE `BillItem` MODIFY `stockType` ENUM('QUANTITY', 'AREA', 'LENGTH', 'PACK', 'LIQUID') NOT NULL;
+
+ALTER TABLE `Product` ADD COLUMN `stockVolumeMl` DOUBLE NOT NULL DEFAULT 0;
+ALTER TABLE `BillItem` ADD COLUMN `volumeMl` DOUBLE NULL;

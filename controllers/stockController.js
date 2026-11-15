@@ -36,7 +36,10 @@ exports.addStockLog = async (req, res) => {
             } else if (product.stockType === 'PACK') {
                 updateData = { [type === 'IN' ? 'stockPacks' : 'stockLooseUnits']: { [type === 'IN' ? 'increment' : 'decrement']: parseFloat(quantity) } };
             } else {
-                updateData = { stockQuantity: { [type === 'IN' ? 'increment' : 'decrement']: parseFloat(quantity) } };
+                const field = product.stockType === 'AREA' ? 'stockAreaCm2'
+                    : product.stockType === 'LENGTH' ? 'stockLengthCm'
+                        : product.stockType === 'LIQUID' ? 'stockVolumeMl' : 'stockQuantity';
+                updateData = { [field]: { [type === 'IN' ? 'increment' : 'decrement']: parseFloat(quantity) } };
             }
 
             const updatedProduct = await tx.product.update({

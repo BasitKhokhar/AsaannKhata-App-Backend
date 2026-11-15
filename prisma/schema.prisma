@@ -16,6 +16,7 @@ enum StockType {
   AREA
   LENGTH
   PACK
+  LIQUID
 }
 
 enum BillStatus {
@@ -74,14 +75,14 @@ model SuperAdmin {
 
 // Shop owner — the actual tenant/customer who signs up and runs their POS.
 model Admin {
-  id           Int     @id @default(autoincrement())
-  name         String
-  email        String  @unique
-  phone        String?
-  password     String
-  refreshToken String? @db.Text
-  tokenVersion  Int     @default(0)
-  isActive     Boolean @default(true) // superadmin suspension switch
+  id            Int            @id @default(autoincrement())
+  name          String
+  email         String         @unique
+  phone         String?
+  password      String
+  refreshToken  String?        @db.Text
+  tokenVersion  Int            @default(0)
+  isActive      Boolean        @default(true) // superadmin suspension switch
   passwordReset PasswordReset?
 
   // Ads + reward-coins economy — lets a FREE_TRIAL/non-cloud admin earn a
@@ -91,10 +92,10 @@ model Admin {
   adCoins             Int       @default(10) // new admins start with 10, mirrors this app's own "starter" pattern
   syncUnlockExpiresAt DateTime? // while unexpired, requireSyncQuota lets a free-tier admin push-sync
 
-  shops               Shop[]
-  subscriptions       UserSubscription[]
-  adCoinTransactions  AdCoinTransaction[]
-  notifications       Notification[]
+  shops              Shop[]
+  subscriptions      UserSubscription[]
+  adCoinTransactions AdCoinTransaction[]
+  notifications      Notification[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -207,11 +208,11 @@ model Product {
   shopId     Int
   categoryId Int?
 
-  barcode String? @db.VarChar(128)
-  looseBarcode String? @db.VarChar(128)
-  barcodes ProductBarcode[]
-  name  String
-  image String?
+  barcode      String?          @db.VarChar(128)
+  looseBarcode String?          @db.VarChar(128)
+  barcodes     ProductBarcode[]
+  name         String
+  image        String?
 
   // 🔥 Stock Control Mode
   stockType StockType @default(QUANTITY)
@@ -228,6 +229,9 @@ model Product {
   // -------- Length mode (stored in CM) --------
   stockLengthCm Float @default(0)
 
+  // -------- Liquid mode (stored in millilitres) --------
+  stockVolumeMl Float @default(0)
+
   // -------- Pack mode (box of N units) --------
   packSize          Int? // units per pack, e.g. 6
   stockPacks        Float  @default(0) // full unopened packs in stock
@@ -235,8 +239,8 @@ model Product {
   packPurchasePrice Float? // optional bulk cost per whole pack (falls back to purchasePrice*packSize)
   packSalePrice     Float? // optional bulk sale price per whole pack (falls back to salePrice*packSize)
 
-  purchasePrice Float
-  salePrice     Float
+  purchasePrice     Float
+  salePrice         Float
   lowStockThreshold Float?
 
   isDeleted Boolean   @default(false)
@@ -266,9 +270,9 @@ model Product {
 //////////////////////////////////////////////////////
 
 model Bill {
-  id     Int @id @default(autoincrement())
+  id              Int   @id @default(autoincrement())
   receiptSnapshot Json?
-  shopId Int
+  shopId          Int
 
   customerName  String
   customerPhone String?
@@ -331,6 +335,9 @@ model BillItem {
 
   // -------- Length mode --------
   lengthCm Float?
+
+  // -------- Liquid mode --------
+  volumeMl Float?
 
   // -------- Pricing --------
   pricePerUnit Float
@@ -467,7 +474,7 @@ model CustomerPayment {
 }
 
 model Expense {
-  id         Int       @id @default(autoincrement())
+  id         Int      @id @default(autoincrement())
   shopId     Int
   category   String
   amount     Float
@@ -476,8 +483,8 @@ model Expense {
 
   isDeleted Boolean   @default(false)
   deletedAt DateTime?
-  clientId   String?
-  deviceId   String?
+  clientId  String?
+  deviceId  String?
 
   shop Shop @relation(fields: [shopId], references: [id])
 
@@ -606,7 +613,7 @@ model SubscriptionPayment {
 // right after this row was applied, so the running balance is always
 // reconstructable/auditable straight from this table.
 model AdCoinTransaction {
-  id           Int      @id @default(autoincrement())
+  id           Int     @id @default(autoincrement())
   shopId       Int
   adminId      Int
   type         String // "EARNED_AD" | "SPENT_SYNC" | "SPENT_BILL"
@@ -666,20 +673,21 @@ model AppPopup {
 }
 
 model ProductBarcode {
-  shopId Int
-  code String @db.VarChar(128)
+  shopId    Int
+  code      String  @db.VarChar(128)
   productId Int
-  unit String @db.VarChar(16)
-  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  unit      String  @db.VarChar(16)
+  shop      Shop    @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
   @@id([shopId, code])
   @@index([productId])
 }
 
 model ReceiptProfile {
-  shopId Int @id
-  config Json
-  version Int @default(1)
+  shopId    Int      @id
+  config    Json
+  version   Int      @default(1)
   updatedAt DateTime @updatedAt
-  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
 }

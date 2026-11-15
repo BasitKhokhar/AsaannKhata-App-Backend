@@ -1,6 +1,6 @@
 const { barcodeFields, syncProductBarcodes } = require('../services/productBarcodes');
 const prisma = require('../prisma/client');
-const { convertToCm, calculateAreaCm2, getAreaConversionFactor, getLengthConversionFactor } = require('../utils/unitConverter');
+const { convertToCm, calculateAreaCm2, getAreaConversionFactor, getLengthConversionFactor, convertToMl, getVolumeConversionFactor } = require('../utils/unitConverter');
 const bucketStorage = require('../utils/bucketStorage');
 const { normalizeStockType } = require('../utils/stockType');
 
@@ -88,6 +88,14 @@ exports.createProduct = async (req, res) => {
                 data.stockLooseUnits = parseFloat(stockLooseUnits) || 0;
                 data.packPurchasePrice = packPurchasePrice ? parseFloat(packPurchasePrice) : null;
                 data.packSalePrice = packSalePrice ? parseFloat(packSalePrice) : null;
+            } else if (normalizedType === 'LIQUID') {
+                const volumeFactor = getVolumeConversionFactor(unit);
+                data.stockVolumeMl = convertToMl(parseFloat(quantity) || 0, unit);
+                if (volumeFactor > 1) {
+                    data.purchasePrice = parseFloat(purchasePrice) / volumeFactor;
+                    data.salePrice = parseFloat(salePrice) / volumeFactor;
+                    if (data.lowStockThreshold != null) data.lowStockThreshold *= volumeFactor;
+                }
             } else {
                 data.stockQuantity = parseFloat(quantity) || 0;
             }
@@ -98,6 +106,8 @@ exports.createProduct = async (req, res) => {
 
                 const initialQty = normalizedType === 'PACK'
                     ? (parseFloat(stockPacks) || 0) * (parseInt(packSize) || 1) + (parseFloat(stockLooseUnits) || 0)
+                    : normalizedType === 'LIQUID'
+                        ? convertToMl(parseFloat(quantity) || 0, unit)
                     : parseFloat(quantity) || 0;
 
                 if (initialQty > 0) {
@@ -308,6 +318,18 @@ exports.updateProduct = async (req, res) => {
                 if (packSalePrice !== undefined) updateData.packSalePrice = packSalePrice ? parseFloat(packSalePrice) : null;
                 if (stockPacks !== undefined) updateData.stockPacks = parseFloat(stockPacks);
                 if (stockLooseUnits !== undefined) updateData.stockLooseUnits = parseFloat(stockLooseUnits);
+            } else if (currentType === 'LIQUID') {
+                const volumeFactor = getVolumeConversionFactor(unit || 'ml');
+                if (purchasePrice !== undefined && volumeFactor > 1) updateData.purchasePrice = parseFloat(purchasePrice) / volumeFactor;
+                if (salePrice !== undefined && volumeFactor > 1) updateData.salePrice = parseFloat(salePrice) / volumeFactor;
+                if (lowStockThreshold !== undefined && lowStockThreshold !== '' && volumeFactor > 1) updateData.lowStockThreshold = parseFloat(lowStockThreshold) * volumeFactor;
+                if (quantity !== undefined) {
+                    const newVolumeMl = convertToMl(parseFloat(quantity), unit || 'ml');
+                    updateData.stockVolumeMl = newVolumeMl;
+                    const diff = newVolumeMl - existingProduct.stockVolumeMl;
+                    stockLogQty = Math.abs(diff);
+                    stockLogDirection = diff;
+                }
             } else {
                 if (quantity !== undefined) {
                     updateData.stockQuantity = parseFloat(quantity);
