@@ -1,4 +1,5 @@
 const prisma = require('../prisma/client');
+const { dateRange } = require('../utils/dateRange');
 
 // Same profit-per-line-item formula as DashboardController.getDashboardStats —
 // kept in one place so sales-by-product/category/margin all agree with the
@@ -26,13 +27,8 @@ function billItemProfit(item) {
 }
 
 function dateRangeWhere(startDate, endDate) {
-    if (!startDate || !endDate) return {};
-    return {
-        createdAt: {
-            gte: new Date(startDate + 'T00:00:00.000Z'),
-            lte: new Date(endDate + 'T23:59:59.999Z'),
-        },
-    };
+    const createdAt = dateRange(startDate, endDate);
+    return createdAt ? { createdAt } : {};
 }
 
 function bucketKeyFor(date, period) {

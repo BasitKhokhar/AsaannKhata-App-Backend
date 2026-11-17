@@ -1,4 +1,5 @@
 const prisma = require('../prisma/client');
+const { dateRange } = require('../utils/dateRange');
 const { normalizeStockType } = require('../utils/stockType');
 const { applyBillItemStock } = require('../services/billStockService');
 const { adjustCustomerBalance } = require('../services/customerService');
@@ -117,12 +118,8 @@ exports.getBills = async (req, res) => {
             where.status = status.toUpperCase();
         }
 
-        if (startDate && endDate) {
-            where.createdAt = {
-                gte: new Date(startDate + 'T00:00:00.000Z'),
-                lte: new Date(endDate + 'T23:59:59.999Z'),
-            };
-        }
+        const createdAt = dateRange(startDate, endDate);
+        if (createdAt) where.createdAt = createdAt;
 
         const bills = await prisma.bill.findMany({
             where,

@@ -1,5 +1,6 @@
 const prisma = require('../prisma/client');
 const analyticsService = require('../services/analyticsService');
+const { dateRange } = require('../utils/dateRange');
 
 function stockUnitsFor(product) {
     switch (product.stockType) {
@@ -42,12 +43,8 @@ exports.getDashboardStats = async (req, res) => {
         const shopId = req.tenant.shopId;
 
         const where = { shopId, isDeleted: false };
-        if (startDate && endDate) {
-            where.createdAt = {
-                gte: new Date(startDate + 'T00:00:00.000Z'),
-                lte: new Date(endDate + 'T23:59:59.999Z'),
-            };
-        }
+        const createdAt = dateRange(startDate, endDate);
+        if (createdAt) where.createdAt = createdAt;
 
         // 1. Calculate Summary Stats
         const bills = await prisma.bill.findMany({

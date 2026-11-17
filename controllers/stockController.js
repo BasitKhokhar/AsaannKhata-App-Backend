@@ -1,4 +1,5 @@
 const prisma = require('../prisma/client');
+const { dateRange } = require('../utils/dateRange');
 
 const VALID_TYPES = ['IN', 'OUT', 'PACK_BREAK'];
 
@@ -95,10 +96,7 @@ exports.getProductStockInDetails = async (req, res) => {
             where.type = type;
         }
 
-        where.createdAt = {
-            gte: new Date(startDate + 'T00:00:00.000Z'),
-            lte: new Date(endDate + 'T23:59:59.999Z'),
-        };
+        where.createdAt = dateRange(startDate, endDate);
 
         const logs = await prisma.stockTransaction.findMany({
             where,

@@ -10,28 +10,50 @@ const PAGE_SIZE = 500;
 // Device registration
 // ----------------------------------------------------------------------------
 
-async function registerDevice(tenant, { deviceId, deviceName, platform }, maxDevices) {
+async function registerDevice(tenant, { deviceId, deviceName, platform, replaceExisting = false }, maxDevices) {
     if (!deviceId) {
         const err = new Error('deviceId is required');
         err.code = 'DEVICE_ID_REQUIRED';
         throw err;
     }
 
-    const existing = await prisma.device.findFirst({ where: { shopId: tenant.shopId, deviceId } });
+    return prisma.$transaction(async (tx) => {
+        const existing = await tx.device.findFirst({ where: { shopId: tenant.shopId, deviceId } });
+        const needsSlot = !existing?.isActive;
 
-    if (!existing) {
-        const activeCount = await prisma.device.count({ where: { shopId: tenant.shopId, isActive: true } });
-        if (activeCount >= maxDevices) {
-            const err = new Error('Device limit reached for this plan');
-            err.code = 'DEVICE_LIMIT_REACHED';
-            throw err;
+        if (needsSlot) {
+            const activeCount = await tx.device.count({ where: { shopId: tenant.shopId, isActive: true } });
+            if (activeCount >= maxDevices) {
+                if (!replaceExisting || maxDevices < 1) {
+                    const err = new Error('Device limit reached for this plan');
+                    err.code = 'DEVICE_LIMIT_REACHED';
+                    throw err;
+                }
+
+                const slotsToFree = activeCount - maxDevices + 1;
+                const replaced = await tx.device.findMany({
+                    where: { shopId: tenant.shopId, isActive: true, deviceId: { not: deviceId } },
+                    select: { id: true },
+                    orderBy: [{ lastSeenAt: 'asc' }, { id: 'asc' }],
+                    take: slotsToFree,
+                });
+                if (replaced.length < slotsToFree) {
+                    const err = new Error('Device limit reached for this plan');
+                    err.code = 'DEVICE_LIMIT_REACHED';
+                    throw err;
+                }
+                await tx.device.updateMany({
+                    where: { id: { in: replaced.map(({ id }) => id) }, shopId: tenant.shopId },
+                    data: { isActive: false, fcmToken: null },
+                });
+            }
         }
-    }
 
-    return prisma.device.upsert({
-        where: { shopId_deviceId: { shopId: tenant.shopId, deviceId } },
-        update: { deviceName, platform, isActive: true, lastSeenAt: new Date() },
-        create: { shopId: tenant.shopId, deviceId, deviceName, platform },
+        return tx.device.upsert({
+            where: { shopId_deviceId: { shopId: tenant.shopId, deviceId } },
+            update: { deviceName, platform, isActive: true, lastSeenAt: new Date() },
+            create: { shopId: tenant.shopId, deviceId, deviceName, platform },
+        });
     });
 }
 

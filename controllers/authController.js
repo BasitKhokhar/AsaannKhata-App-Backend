@@ -3,7 +3,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const crypto = require('node:crypto');
 const prisma = require('../prisma/client');
-const { activateFreeTrial } = require('../services/subscriptionService');
+const { activateFreeTrial, getActiveEntitlement } = require('../services/subscriptionService');
 const { seedDefaultCategoriesForShop } = require('../services/shopTypeService');
 const { sendPasswordResetCode } = require('../services/mailService');
 
@@ -72,6 +72,7 @@ exports.register = async (req, res) => {
 
             return { admin, shop, accessToken, refreshToken };
         });
+        const entitlement = await getActiveEntitlement(admin.id);
 
         res.status(201).json({
             message: 'Account created successfully',
@@ -81,6 +82,7 @@ exports.register = async (req, res) => {
             email: admin.email,
             name: admin.name,
             shop,
+            entitlement,
         });
     } catch (err) {
         console.error('Register error:', err);
@@ -112,7 +114,6 @@ exports.adminLogin = async (req, res) => {
 
         await prisma.admin.update({ where: { id: admin.id }, data: { refreshToken } });
 
-        const { getActiveEntitlement } = require('../services/subscriptionService');
         const entitlement = await getActiveEntitlement(admin.id);
 
         res.json({
