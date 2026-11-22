@@ -11,6 +11,48 @@ const generateSuperAdminAccessToken = (superAdmin) =>
 const generateSuperAdminRefreshToken = (superAdmin) =>
     jwt.sign({ superAdminId: superAdmin.id, role: 'superadmin' }, process.env.REFRESH_SECRET, { expiresIn: '30d' });
 
+// Creates the initial platform owner. Registration closes permanently as soon
+// as one SuperAdmin exists, preventing this route from creating extra owners.
+exports.registerSuperAdmin = async (req, res) => {
+    const name = req.body?.name?.trim();
+    const email = req.body?.email?.trim().toLowerCase();
+    const password = req.body?.password;
+
+    if (!name || name.length > 100) {
+        return res.status(400).json({ message: 'Name is required and must be at most 100 characters' });
+    }
+    if (!email || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ message: 'A valid email address is required' });
+    }
+    if (typeof password !== 'string' || password.length < 12 || password.length > 128) {
+        return res.status(400).json({ message: 'Password must be between 12 and 128 characters' });
+    }
+
+    try {
+        const account = await prisma.$transaction(async (tx) => {
+            if (await tx.superAdmin.count() > 0) return null;
+
+            return tx.superAdmin.create({
+                data: {
+                    name,
+                    email,
+                    password: await bcrypt.hash(password, 12),
+                },
+                select: { id: true, name: true, email: true, createdAt: true },
+            });
+        }, { isolationLevel: 'Serializable' });
+
+        if (!account) {
+            return res.status(403).json({ message: 'SuperAdmin registration is already closed' });
+        }
+        return res.status(201).json({ message: 'SuperAdmin registered', superAdmin: account });
+    } catch (err) {
+        if (err.code === 'P2002') return res.status(409).json({ message: 'Email is already registered' });
+        console.error('SuperAdmin register error:', err.message);
+        return res.status(500).json({ message: 'Server error' });
+    }
+};
+
 exports.superAdminLogin = async (req, res) => {
     const { email, password } = req.body;
     try {
