@@ -130,45 +130,46 @@ exports.markAllRead = async (req, res) => {
     }
 };
 
-// POST /notifications/admin/send — SuperAdmin-only. Targets either a shopId
-// directly, or an adminId (resolved to that admin's first/oldest shop, since
-// Notification is stored per-shop like every other tenant-scoped table here).
+// POST /notifications/admin/send — SuperAdmin-only. Sends to all active owners
+// by default, or to an explicit list of owner IDs.
 exports.adminSend = async (req, res) => {
     try {
-        const { adminId, shopId, title, message, type, data } = req.body;
+        const { adminId, adminIds, sendToAll, shopId, title, message, type, data } = req.body;
 
         if (!title || !message) {
             return res.status(400).json({ message: 'title and message are required' });
         }
-        if (!adminId && !shopId) {
-            return res.status(400).json({ message: 'adminId or shopId is required' });
+        const requestedIds = Array.isArray(adminIds) ? [...new Set(adminIds.map((id) => parseInt(id, 10)).filter(Number.isInteger))] : [];
+        if (!sendToAll && !requestedIds.length && !adminId && !shopId) {
+            return res.status(400).json({ message: 'Select at least one recipient' });
         }
 
-        let targetShop;
-        if (shopId) {
-            targetShop = await prisma.shop.findUnique({ where: { id: parseInt(shopId, 10) } });
+        let targetAdmins;
+        if (sendToAll) {
+            targetAdmins = await prisma.admin.findMany({ where: { shops: { some: {} } }, select: { id: true } });
+        } else if (requestedIds.length) {
+            targetAdmins = await prisma.admin.findMany({ where: { id: { in: requestedIds }, shops: { some: {} } }, select: { id: true } });
+        } else if (shopId) {
+            const targetShop = await prisma.shop.findUnique({ where: { id: parseInt(shopId, 10) }, select: { adminId: true } });
+            targetAdmins = targetShop ? [{ id: targetShop.adminId }] : [];
         } else {
-            targetShop = await prisma.shop.findFirst({ where: { adminId: parseInt(adminId, 10) }, orderBy: { id: 'asc' } });
+            targetAdmins = await prisma.admin.findMany({ where: { id: parseInt(adminId, 10), shops: { some: {} } }, select: { id: true } });
         }
 
-        if (!targetShop) {
-            return res.status(404).json({ message: 'No shop found for the given adminId/shopId' });
+        if (!targetAdmins.length) {
+            return res.status(404).json({ message: 'No eligible users found for this notification' });
         }
 
-        const notification = await prisma.notification.create({
-            data: {
-                shopId: targetShop.id,
-                adminId: targetShop.adminId,
-                title,
-                message,
-                type: type || null,
-                data: data || null,
-            },
-        });
+        const notifications = [];
+        const pushes = [];
+        for (const target of targetAdmins) {
+            const targetShop = await prisma.shop.findFirst({ where: { adminId: target.id }, orderBy: { id: 'asc' } });
+            if (!targetShop) continue;
+            notifications.push(await prisma.notification.create({ data: { shopId: targetShop.id, adminId: target.id, title, message, type: type || null, data: data || null } }));
+            pushes.push(await fcmService.sendToAdmin(target.id, { title, body: message, data }));
+        }
 
-        const push = await fcmService.sendToAdmin(targetShop.adminId, { title, body: message, data });
-
-        res.status(201).json({ success: true, notification, push });
+        res.status(201).json({ success: true, recipientCount: notifications.length, notifications, push: { sent: pushes.reduce((sum, item) => sum + (item.sent || 0), 0), failed: pushes.reduce((sum, item) => sum + (item.failed || 0), 0) } });
     } catch (err) {
         console.error('Admin Send Notification Error:', err);
         res.status(500).json({ error: err.message });
