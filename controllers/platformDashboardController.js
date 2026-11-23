@@ -86,6 +86,29 @@ exports.overview = async (req, res) => {
     } catch (err) { return handleError(res, 'Platform overview error:', err); }
 };
 
+exports.supportRequests = async (req, res) => {
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 25));
+    const status = String(req.query.status || '').trim().toUpperCase();
+    const category = String(req.query.category || '').trim();
+    const where = {
+        ...(status && ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'].includes(status) ? { status } : {}),
+        ...(category ? { category } : {}),
+    };
+    try {
+        const [rows, total] = await Promise.all([
+            prisma.supportRequest.findMany({
+                where, skip: (page - 1) * limit, take: limit, orderBy: { createdAt: 'desc' },
+                include: { admin: { select: { id: true, name: true, email: true, phone: true } }, shop: { select: { id: true, name: true } } },
+            }),
+            prisma.supportRequest.count({ where }),
+        ]);
+        return res.json({ rows, total, page, limit, hasMore: page * limit < total });
+    } catch (error) {
+        return handleError(res, 'Platform support requests error:', error);
+    }
+};
+
 exports.shops = async (req, res) => {
     const { page, limit, skip } = pageOptions(req.query);
     const search = String(req.query.search || '').trim().slice(0, 100);

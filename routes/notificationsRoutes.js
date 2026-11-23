@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const notificationsController = require('../controllers/notificationsController');
+const supportController = require('../controllers/supportController');
 const { verifyAdminToken, verifySuperAdminToken } = require('../middleware/authMiddleware');
 const tenantContext = require('../middleware/tenantContext');
 
@@ -12,6 +13,7 @@ router.use(verifyAdminToken, tenantContext);
 
 router.post('/register-token', notificationsController.registerToken);
 router.delete('/remove-token', notificationsController.removeToken);
+router.post('/support-requests', supportController.create);
 router.get('/', notificationsController.list);
 router.get('/unread-count', notificationsController.unreadCount);
 router.put('/:id/read', notificationsController.markRead);

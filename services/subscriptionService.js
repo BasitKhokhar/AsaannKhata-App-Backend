@@ -2,32 +2,50 @@ const prisma = require('../prisma/client');
 
 const LIVE_STATUSES = ['ACTIVE', 'GRACE_PERIOD'];
 
+function freeEntitlement(plan = null) {
+    return {
+        subscriptionId: null,
+        planName: plan?.name ?? 'Free Plan',
+        startDate: null,
+        billingCycle: null,
+        paymentProvider: null,
+        tier: plan?.tier ?? 'FREE_TRIAL',
+        planCode: plan?.code ?? 'FREE_TRIAL',
+        status: 'ACTIVE',
+        cloudEnabled: !!plan?.cloudEnabled,
+        offlineEnabled: plan?.offlineEnabled !== false,
+        maxDevices: plan?.maxDevices ?? 1,
+        expiryDate: null,
+        isTrial: true,
+        canWrite: true,
+    };
+}
+
 // Single source of truth for "what can this admin do right now". Computed at
 // read time from UserSubscription — never cached on Admin/Shop — so there is
 // exactly one place entitlement can live, and every write path (registration,
 // RevenueCat webhook, cron, superadmin manual assignment) only ever has to
 // write a UserSubscription row, never a duplicated field elsewhere.
 async function getActiveEntitlement(adminId) {
-    const sub = await prisma.userSubscription.findFirst({
-        where: { adminId, status: { in: LIVE_STATUSES } },
-        orderBy: { createdAt: 'desc' },
-        include: { plan: true },
-    });
+    const [sub, freePlan] = await Promise.all([
+        prisma.userSubscription.findFirst({
+            where: { adminId, status: { in: LIVE_STATUSES } },
+            orderBy: { createdAt: 'desc' },
+            include: { plan: true },
+        }),
+        prisma.subscriptionPlan.findUnique({ where: { code: 'FREE_TRIAL' } }),
+    ]);
 
     if (!sub) {
-        return {
-            tier: null,
-            status: 'NONE',
-            cloudEnabled: false,
-            offlineEnabled: true,
-            maxDevices: 0,
-            expiryDate: null,
-            isTrial: false,
-            canWrite: false,
-        };
+        // A paid subscription is retained as history, but the effective plan
+        // after expiry is always Free. This keeps the API response consistent
+        // whether the expiry cron has already run or not.
+        return freeEntitlement(freePlan);
     }
 
     const expired = !!sub.expiryDate && sub.expiryDate < new Date();
+
+    if (expired) return freeEntitlement(freePlan);
 
     return {
         subscriptionId: sub.id,

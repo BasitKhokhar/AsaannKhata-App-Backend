@@ -57,6 +57,13 @@ enum PaymentStatus {
   PENDING
 }
 
+enum SupportRequestStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
 //////////////////////////////////////////////////////
 // PLATFORM / TENANT IDENTITY
 //////////////////////////////////////////////////////
@@ -96,6 +103,7 @@ model Admin {
   subscriptions      UserSubscription[]
   adCoinTransactions AdCoinTransaction[]
   notifications      Notification[]
+  supportRequests    SupportRequest[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -163,6 +171,7 @@ model Shop {
   expenses           Expense[]
   adCoinTransactions AdCoinTransaction[]
   notifications      Notification[]
+  supportRequests    SupportRequest[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -649,6 +658,27 @@ model Notification {
   admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
 
   @@index([shopId, adminId, isRead])
+}
+
+model SupportRequest {
+  id       Int                  @id @default(autoincrement())
+  adminId  Int
+  shopId   Int?
+  email    String               @db.VarChar(191)
+  category String               @db.VarChar(48)
+  subject  String               @db.VarChar(160)
+  message  String               @db.Text
+  status   SupportRequestStatus @default(OPEN)
+
+  admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  shop  Shop? @relation(fields: [shopId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([adminId, createdAt])
+  @@index([shopId, createdAt])
+  @@index([status, createdAt])
 }
 
 // Remote home-screen content. The mobile app renders a fixed native layout;
