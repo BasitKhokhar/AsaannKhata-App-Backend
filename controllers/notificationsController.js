@@ -1,5 +1,6 @@
 const prisma = require('../prisma/client');
 const fcmService = require('../services/fcmService');
+const syncService = require('../services/syncService');
 
 // POST /notifications/register-token — attaches an FCM token to the caller's
 // already-registered Device row. Ownership check mirrors
@@ -7,23 +8,30 @@ const fcmService = require('../services/fcmService');
 // resolved by tenantContext.
 exports.registerToken = async (req, res) => {
     try {
-        const { deviceId, fcmToken } = req.body;
+        const { deviceId, fcmToken, deviceName = 'AsaanKhata device', platform = 'android' } = req.body;
         if (!deviceId || !fcmToken) {
             return res.status(400).json({ message: 'deviceId and fcmToken are required' });
         }
 
-        const device = await prisma.device.findFirst({ where: { shopId: req.tenant.shopId, deviceId } });
-        if (!device) {
-            return res.status(404).json({ code: 'DEVICE_NOT_REGISTERED', message: 'Register this device first via POST /sync/devices/register' });
-        }
+        // Token registration is also the push-device registration path. This
+        // keeps FCM available for Free/offline users and first app launches;
+        // normal sync still uses the same idempotent registration service.
+        const device = await syncService.registerDevice(
+            req.tenant,
+            { deviceId, deviceName, platform },
+            req.entitlement.maxDevices
+        );
 
         const updated = await prisma.device.update({
             where: { id: device.id, shopId: req.tenant.shopId },
-            data: { fcmToken },
+            data: { fcmToken, isActive: true, lastSeenAt: new Date() },
         });
 
         res.json({ message: 'FCM token registered', device: updated });
     } catch (err) {
+        if (err.code === 'DEVICE_LIMIT_REACHED') {
+            return res.status(403).json({ code: err.code, message: err.message });
+        }
         console.error('Register FCM Token Error:', err);
         res.status(500).json({ error: err.message });
     }
@@ -37,17 +45,12 @@ exports.removeToken = async (req, res) => {
             return res.status(400).json({ message: 'deviceId is required' });
         }
 
-        const device = await prisma.device.findFirst({ where: { shopId: req.tenant.shopId, deviceId } });
-        if (!device) {
-            return res.status(404).json({ code: 'DEVICE_NOT_REGISTERED', message: 'Device not found for this shop' });
-        }
-
-        await prisma.device.update({
-            where: { id: device.id, shopId: req.tenant.shopId },
+        const result = await prisma.device.updateMany({
+            where: { deviceId, shop: { adminId: req.admin.id } },
             data: { fcmToken: null },
         });
 
-        res.json({ message: 'FCM token removed' });
+        res.json({ message: 'FCM token removed', count: result.count });
     } catch (err) {
         console.error('Remove FCM Token Error:', err);
         res.status(500).json({ error: err.message });
@@ -165,11 +168,24 @@ exports.adminSend = async (req, res) => {
         for (const target of targetAdmins) {
             const targetShop = await prisma.shop.findFirst({ where: { adminId: target.id }, orderBy: { id: 'asc' } });
             if (!targetShop) continue;
-            notifications.push(await prisma.notification.create({ data: { shopId: targetShop.id, adminId: target.id, title, message, type: type || null, data: data || null } }));
-            pushes.push(await fcmService.sendToAdmin(target.id, { title, body: message, data }));
+            const notification = await prisma.notification.create({ data: { shopId: targetShop.id, adminId: target.id, title, message, type: type || null, data: data || null } });
+            notifications.push(notification);
+            // Include the persisted inbox ID in the FCM data payload so the
+            // mobile app can correlate a received push with this exact row.
+            pushes.push(await fcmService.sendToAdmin(target.id, { title, body: message, data, notificationId: notification.id }));
         }
 
-        res.status(201).json({ success: true, recipientCount: notifications.length, notifications, push: { sent: pushes.reduce((sum, item) => sum + (item.sent || 0), 0), failed: pushes.reduce((sum, item) => sum + (item.failed || 0), 0) } });
+        res.status(201).json({
+            success: true,
+            recipientCount: notifications.length,
+            notifications,
+            push: {
+                targeted: pushes.reduce((sum, item) => sum + (item.targeted || 0), 0),
+                accepted: pushes.reduce((sum, item) => sum + (item.accepted ?? item.sent ?? 0), 0),
+                sent: pushes.reduce((sum, item) => sum + (item.accepted ?? item.sent ?? 0), 0),
+                failed: pushes.reduce((sum, item) => sum + (item.failed || 0), 0),
+            },
+        });
     } catch (err) {
         console.error('Admin Send Notification Error:', err);
         res.status(500).json({ error: err.message });

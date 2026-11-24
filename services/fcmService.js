@@ -6,7 +6,7 @@ const firebaseAdmin = require('../config/firebaseAdmin');
 // failure must never crash the calling request — this is always a
 // best-effort side effect of persisting a Notification row, never the
 // primary write — so everything here is wrapped in try/catch.
-async function sendToAdmin(adminId, { title, body, data } = {}) {
+async function sendToAdmin(adminId, { title, body, data, notificationId } = {}) {
     try {
         const shops = await prisma.shop.findMany({ where: { adminId }, select: { id: true } });
         const shopIds = shops.map((s) => s.id);
@@ -21,6 +21,8 @@ async function sendToAdmin(adminId, { title, body, data } = {}) {
         const stringData = Object.fromEntries(
             Object.entries(data || {}).map(([key, value]) => [key, typeof value === 'string' ? value : JSON.stringify(value)])
         );
+        if (notificationId != null) stringData.notificationId = String(notificationId);
+        stringData.source = 'backend-fcm';
 
         const tokens = devices.map((d) => d.fcmToken);
         const response = await firebaseAdmin.messaging().sendEachForMulticast({
@@ -43,7 +45,12 @@ async function sendToAdmin(adminId, { title, body, data } = {}) {
             })
         );
 
-        return { sent: response.successCount || 0, failed: response.failureCount || 0 };
+        return {
+            accepted: response.successCount || 0,
+            sent: response.successCount || 0,
+            failed: response.failureCount || 0,
+            targeted: tokens.length,
+        };
     } catch (err) {
         console.error('fcmService.sendToAdmin error:', err.message);
         return { sent: 0, error: err.message };
