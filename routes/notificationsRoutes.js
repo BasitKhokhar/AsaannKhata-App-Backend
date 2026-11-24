@@ -10,10 +10,12 @@ const resolveEntitlement = require('../middleware/resolveEntitlement');
 // router.use() below so it never inherits the admin JWT / tenantContext gate.
 router.post('/admin/send', verifySuperAdminToken, notificationsController.adminSend);
 
-router.use(verifyAdminToken, tenantContext, resolveEntitlement);
+// Push registration is account-scoped; it must not require a shop or consume
+// a shop sync-device slot.
+router.post('/register-token', verifyAdminToken, notificationsController.registerToken);
+router.delete('/remove-token', verifyAdminToken, notificationsController.removeToken);
 
-router.post('/register-token', notificationsController.registerToken);
-router.delete('/remove-token', notificationsController.removeToken);
+router.use(verifyAdminToken, tenantContext, resolveEntitlement);
 router.post('/support-requests', supportController.create);
 router.get('/', notificationsController.list);
 router.get('/unread-count', notificationsController.unreadCount);

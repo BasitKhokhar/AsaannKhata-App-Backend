@@ -1,21 +1,18 @@
 const prisma = require('../prisma/client');
 const firebaseAdmin = require('../config/firebaseAdmin');
 
-// Sends one push notification to every active, token-registered Device
-// belonging to `adminId` (across all of that admin's shops). A Firebase send
+// Sends one push notification to every active, token-registered installation
+// belonging to `adminId`. Push registrations are account-scoped, unlike sync
+// devices which are shop-scoped. A Firebase send
 // failure must never crash the calling request — this is always a
 // best-effort side effect of persisting a Notification row, never the
 // primary write — so everything here is wrapped in try/catch.
 async function sendToAdmin(adminId, { title, body, data, notificationId } = {}) {
     try {
-        const shops = await prisma.shop.findMany({ where: { adminId }, select: { id: true } });
-        const shopIds = shops.map((s) => s.id);
-        if (!shopIds.length) return { sent: 0 };
-
-        const devices = await prisma.device.findMany({
-            where: { shopId: { in: shopIds }, isActive: true, fcmToken: { not: null } },
+        const installations = await prisma.pushInstallation.findMany({
+            where: { adminId, isActive: true, fcmToken: { not: null } },
         });
-        if (!devices.length) return { sent: 0 };
+        if (!installations.length) return { sent: 0, accepted: 0, targeted: 0, failed: 0 };
 
         // FCM's data payload values must all be strings.
         const stringData = Object.fromEntries(
@@ -24,7 +21,7 @@ async function sendToAdmin(adminId, { title, body, data, notificationId } = {}) 
         if (notificationId != null) stringData.notificationId = String(notificationId);
         stringData.source = 'backend-fcm';
 
-        const tokens = devices.map((d) => d.fcmToken);
+        const tokens = [...new Set(installations.map((d) => d.fcmToken).filter(Boolean))];
         const response = await firebaseAdmin.messaging().sendEachForMulticast({
             tokens,
             notification: { title, body },
@@ -35,10 +32,10 @@ async function sendToAdmin(adminId, { title, body, data, notificationId } = {}) 
         await Promise.all(
             (response.responses || []).map((result, index) => {
                 if (!result.success && result.error?.code === 'messaging/registration-token-not-registered') {
-                    const device = devices[index];
-                    return prisma.device.update({
-                        where: { id: device.id, shopId: device.shopId },
-                        data: { fcmToken: null },
+                    const token = tokens[index];
+                    return prisma.pushInstallation.updateMany({
+                        where: { fcmToken: token },
+                        data: { fcmToken: null, isActive: false },
                     }).catch((err) => console.error('fcmService: failed to clear stale token:', err.message));
                 }
                 return null;

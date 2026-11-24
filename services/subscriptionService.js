@@ -15,6 +15,7 @@ function freeEntitlement(plan = null) {
         cloudEnabled: !!plan?.cloudEnabled,
         offlineEnabled: plan?.offlineEnabled !== false,
         maxDevices: plan?.maxDevices ?? 1,
+        maxShops: plan?.maxShops ?? null,
         expiryDate: null,
         isTrial: true,
         canWrite: true,
@@ -40,12 +41,12 @@ async function getActiveEntitlement(adminId) {
         // A paid subscription is retained as history, but the effective plan
         // after expiry is always Free. This keeps the API response consistent
         // whether the expiry cron has already run or not.
-        return freeEntitlement(freePlan);
+        return { ...freeEntitlement(freePlan), usage: await getUsage(adminId) };
     }
 
     const expired = !!sub.expiryDate && sub.expiryDate < new Date();
 
-    if (expired) return freeEntitlement(freePlan);
+    if (expired) return { ...freeEntitlement(freePlan), usage: await getUsage(adminId) };
 
     return {
         subscriptionId: sub.id,
@@ -56,9 +57,14 @@ async function getActiveEntitlement(adminId) {
         tier: sub.plan?.tier ?? null,
         planCode: sub.plan?.code ?? null,
         status: expired ? 'EXPIRED' : sub.status,
-        cloudEnabled: sub.cloudEnabled,
-        offlineEnabled: sub.offlineEnabled,
-        maxDevices: sub.maxDevices,
+        // The active catalog plan is authoritative for current limits. The
+        // copied subscription values remain an audit/purchase snapshot and
+        // provide compatibility for legacy subscriptions without a plan row.
+        cloudEnabled: sub.plan?.cloudEnabled ?? sub.cloudEnabled,
+        offlineEnabled: sub.plan?.offlineEnabled ?? sub.offlineEnabled,
+        maxDevices: sub.plan?.maxDevices ?? sub.maxDevices,
+        maxShops: sub.plan?.maxShops ?? sub.maxShops ?? null,
+        usage: await getUsage(adminId),
         expiryDate: sub.expiryDate,
         isTrial: sub.isTrial,
         canWrite: !expired && LIVE_STATUSES.includes(sub.status),
@@ -88,11 +94,32 @@ async function activateFreeTrial(tx, adminId) {
             cloudEnabled: plan.cloudEnabled,
             offlineEnabled: plan.offlineEnabled,
             maxDevices: plan.maxDevices,
+            maxShops: plan.maxShops,
         },
     });
+}
+
+async function getUsage(adminId) {
+    // Device is a tenant-scoped model. The tenant guard requires every Device
+    // query to carry shopId at the top level, so resolve the owner's shops
+    // first instead of filtering Device through the nested Shop relation.
+    const shops = await prisma.shop.findMany({
+        where: { adminId },
+        select: { id: true },
+    });
+    const shopIds = shops.map(({ id }) => id);
+
+    const activeDevices = shopIds.length
+        ? await prisma.device.count({
+            where: { shopId: { in: shopIds }, isActive: true },
+        })
+        : 0;
+
+    return { shops: shopIds.length, activeDevices };
 }
 
 module.exports = {
     getActiveEntitlement,
     activateFreeTrial,
+    getUsage,
 };

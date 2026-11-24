@@ -115,6 +115,8 @@ exports.updateSuperAdminPassword = async (req, res) => {
 // -------------------
 exports.createPlan = async (req, res) => {
     try {
+        const limitError = validatePlanLimits(req.body);
+        if (limitError) return res.status(400).json({ message: limitError });
         const plan = await prisma.subscriptionPlan.create({ data: req.body });
         res.status(201).json({ message: 'Plan created', plan });
     } catch (err) {
@@ -136,6 +138,8 @@ exports.getAllPlans = async (req, res) => {
 
 exports.updatePlan = async (req, res) => {
     try {
+        const limitError = validatePlanLimits(req.body);
+        if (limitError) return res.status(400).json({ message: limitError });
         const { id } = req.params;
         const plan = await prisma.subscriptionPlan.update({ where: { id: parseInt(id) }, data: req.body });
         res.json({ message: 'Plan updated', plan });
@@ -144,6 +148,16 @@ exports.updatePlan = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+
+function validatePlanLimits(body = {}) {
+    const devices = Number(body.maxDevices);
+    if (!Number.isSafeInteger(devices) || devices < 1) return 'maxDevices must be a positive integer';
+    if (body.maxShops !== null && body.maxShops !== undefined && body.maxShops !== '') {
+        const shops = Number(body.maxShops);
+        if (!Number.isSafeInteger(shops) || shops < 1) return 'maxShops must be null or a positive integer';
+    }
+    return null;
+}
 
 // Plans with live subscriptions are never hard-deleted — only deactivated,
 // so historical UserSubscription/SubscriptionPayment rows keep a valid FK.
@@ -191,6 +205,7 @@ exports.assignSubscription = async (req, res) => {
                     cloudEnabled: plan.cloudEnabled,
                     offlineEnabled: plan.offlineEnabled,
                     maxDevices: plan.maxDevices,
+                    maxShops: plan.maxShops,
                     assignedBySuperAdminId: req.superAdmin.id,
                 },
             });

@@ -103,6 +103,7 @@ model Admin {
   subscriptions      UserSubscription[]
   adCoinTransactions AdCoinTransaction[]
   notifications      Notification[]
+  pushInstallations   PushInstallation[]
   supportRequests    SupportRequest[]
 
   createdAt DateTime @default(now())
@@ -418,6 +419,29 @@ model Device {
   @@index([shopId])
 }
 
+// Push registration is account-scoped and intentionally separate from the
+// shop-scoped sync Device table. A phone can belong to several shops, but the
+// same FCM token must receive one account notification only once.
+model PushInstallation {
+  id             Int      @id @default(autoincrement())
+  adminId        Int
+  installationId String
+  fcmToken       String?  @db.VarChar(4096)
+  deviceName     String?
+  platform       String?
+  isActive       Boolean  @default(true)
+  lastSeenAt     DateTime @default(now())
+  tokenUpdatedAt DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@unique([adminId, installationId])
+  @@index([adminId, isActive])
+  @@index([fcmToken])
+}
+
 //////////////////////////////////////////////////////
 // CUSTOMER / KHATA LEDGER (credit customers + running balance)
 //////////////////////////////////////////////////////
@@ -530,6 +554,7 @@ model SubscriptionPlan {
   cloudEnabled   Boolean @default(false)
   offlineEnabled Boolean @default(true)
   maxDevices     Int     @default(1)
+  maxShops       Int?
 
   revenueCatProductId String? @unique // maps to the RevenueCat/store product identifier
 
@@ -571,6 +596,7 @@ model UserSubscription {
   cloudEnabled   Boolean @default(false)
   offlineEnabled Boolean @default(true)
   maxDevices     Int     @default(1)
+  maxShops       Int?
 
   assignedBySuperAdminId Int? // set when paymentProvider = MANUAL
 

@@ -38,6 +38,7 @@ async function main() {
                 cloudEnabled: lifetimePlan.cloudEnabled,
                 offlineEnabled: lifetimePlan.offlineEnabled,
                 maxDevices: lifetimePlan.maxDevices,
+                maxShops: lifetimePlan.maxShops,
             },
         });
         console.log(`  + granted LIFETIME_SINGLE_SHOP to admin #${admin.id} (${admin.email})`);

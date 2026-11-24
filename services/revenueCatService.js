@@ -141,6 +141,7 @@ async function reconcileFromSubscriber(adminId, event = null) {
                     cloudEnabled: selected.plan.cloudEnabled,
                     offlineEnabled: selected.plan.offlineEnabled,
                     maxDevices: selected.plan.maxDevices,
+                    maxShops: selected.plan.maxShops,
                     isTrial: false,
                     ...(event && PURCHASE_EVENTS.has(event.type) && typeof event.price_in_purchased_currency === 'number'
                         ? { pricePaid: event.price_in_purchased_currency, priceCurrency: event.currency || selected.plan.currency }

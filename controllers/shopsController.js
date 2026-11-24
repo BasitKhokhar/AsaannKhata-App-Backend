@@ -2,6 +2,7 @@ const prisma = require('../prisma/client');
 const bucketStorage = require('../utils/bucketStorage');
 const { seedDefaultCategoriesForShop } = require('../services/shopTypeService');
 const upload = require('../middleware/imageUpload');
+const { getActiveEntitlement } = require('../services/subscriptionService');
 
 // Create an additional shop under the same admin (the first shop is created
 // as part of POST /auth/admin/register, not here).
@@ -13,6 +14,10 @@ exports.createShop = [
             const file = req.file;
             const adminId = req.admin.id;
 
+            const entitlement = await getActiveEntitlement(adminId);
+            if (!entitlement.canWrite) {
+                return res.status(402).json({ code: 'SUBSCRIPTION_REQUIRED', message: 'Your plan does not allow creating shops.' });
+            }
             if (!shopTypeCode) {
                 return res.status(400).json({ message: 'shopTypeCode is required' });
             }
@@ -29,15 +34,28 @@ exports.createShop = [
             }
 
             const shop = await prisma.$transaction(async (tx) => {
+                // Re-check inside the write transaction so two concurrent
+                // Add Shop requests cannot both pass a stale preflight count.
+                if (entitlement.maxShops != null) {
+                    const shopCount = await tx.shop.count({ where: { adminId } });
+                    if (shopCount >= entitlement.maxShops) {
+                        const error = new Error(`This plan allows up to ${entitlement.maxShops} shop${entitlement.maxShops === 1 ? '' : 's'}.`);
+                        error.code = 'SHOP_LIMIT_REACHED';
+                        throw error;
+                    }
+                }
                 const created = await tx.shop.create({
                     data: { name, address, phone, logo: logoUrl, adminId, shopTypeId: shopType.id },
                 });
                 await seedDefaultCategoriesForShop(tx, created.id, shopType);
                 return created;
-            });
+            }, { isolationLevel: 'Serializable' });
 
             res.status(201).json({ message: 'Shop created successfully', shop, id: shop.id });
         } catch (err) {
+            if (err.code === 'SHOP_LIMIT_REACHED') {
+                return res.status(403).json({ code: err.code, message: err.message });
+            }
             console.error('Create Shop Error:', err);
             res.status(500).json({ error: err.message });
         }

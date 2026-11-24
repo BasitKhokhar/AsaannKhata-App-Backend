@@ -79,6 +79,7 @@ const SUBSCRIPTION_PLANS = [
         cloudEnabled: false,
         offlineEnabled: true,
         maxDevices: 1,
+        maxShops: 1,
         sortOrder: 1,
     },
     {
@@ -97,6 +98,7 @@ const SUBSCRIPTION_PLANS = [
         cloudEnabled: false,
         offlineEnabled: true,
         maxDevices: 1,
+        maxShops: 1,
         sortOrder: 10,
     },
     {
@@ -115,6 +117,7 @@ const SUBSCRIPTION_PLANS = [
         cloudEnabled: false,
         offlineEnabled: true,
         maxDevices: 2,
+        maxShops: null,
         sortOrder: 11,
     },
     {
@@ -129,6 +132,7 @@ const SUBSCRIPTION_PLANS = [
         cloudEnabled: true,
         offlineEnabled: true,
         maxDevices: 2,
+        maxShops: 5,
         sortOrder: 20,
     },
     {
@@ -143,6 +147,7 @@ const SUBSCRIPTION_PLANS = [
         cloudEnabled: true,
         offlineEnabled: true,
         maxDevices: 2,
+        maxShops: 5,
         sortOrder: 21,
     },
     {
@@ -157,6 +162,7 @@ const SUBSCRIPTION_PLANS = [
         cloudEnabled: true,
         offlineEnabled: true,
         maxDevices: 2,
+        maxShops: 5,
         sortOrder: 22,
     },
     {
@@ -171,6 +177,7 @@ const SUBSCRIPTION_PLANS = [
         cloudEnabled: true,
         offlineEnabled: true,
         maxDevices: 5,
+        maxShops: null,
         sortOrder: 30,
     },
     {
@@ -185,6 +192,7 @@ const SUBSCRIPTION_PLANS = [
         cloudEnabled: true,
         offlineEnabled: true,
         maxDevices: 5,
+        maxShops: null,
         sortOrder: 31,
     },
     {
@@ -199,6 +207,7 @@ const SUBSCRIPTION_PLANS = [
         cloudEnabled: true,
         offlineEnabled: true,
         maxDevices: 5,
+        maxShops: null,
         sortOrder: 32,
     },
 ];
@@ -252,6 +261,7 @@ async function seedSubscriptionPlans() {
             cloudEnabled: false,
             offlineEnabled: true,
             maxDevices: 1,
+            maxShops: 1,
             ...definedPlanData,
         };
         const productConfig = PRODUCT_IDS[code];

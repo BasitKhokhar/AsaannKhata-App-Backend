@@ -1,37 +1,31 @@
 const prisma = require('../prisma/client');
 const fcmService = require('../services/fcmService');
-const syncService = require('../services/syncService');
 
-// POST /notifications/register-token — attaches an FCM token to the caller's
-// already-registered Device row. Ownership check mirrors
-// middleware/requireDeviceRegistered.js: the device must belong to the shop
-// resolved by tenantContext.
+// POST /notifications/register-token — upserts the caller's account-scoped
+// push installation. This is deliberately independent from shop sync devices.
 exports.registerToken = async (req, res) => {
     try {
-        const { deviceId, fcmToken, deviceName = 'AsaanKhata device', platform = 'android' } = req.body;
-        if (!deviceId || !fcmToken) {
-            return res.status(400).json({ message: 'deviceId and fcmToken are required' });
+        const { installationId, deviceId, fcmToken, deviceName = 'AsaanKhata device', platform = 'android' } = req.body;
+        const resolvedInstallationId = installationId || deviceId;
+        if (!resolvedInstallationId || !fcmToken) {
+            return res.status(400).json({ message: 'installationId and fcmToken are required' });
         }
 
-        // Token registration is also the push-device registration path. This
-        // keeps FCM available for Free/offline users and first app launches;
-        // normal sync still uses the same idempotent registration service.
-        const device = await syncService.registerDevice(
-            req.tenant,
-            { deviceId, deviceName, platform },
-            req.entitlement.maxDevices
-        );
+        // A token belongs to the currently signed-in account. Detach it from
+        // another account if this installation was used to switch accounts.
+        await prisma.pushInstallation.updateMany({
+            where: { fcmToken, adminId: { not: req.admin.id } },
+            data: { fcmToken: null, isActive: false },
+        });
 
-        const updated = await prisma.device.update({
-            where: { id: device.id, shopId: req.tenant.shopId },
-            data: { fcmToken, isActive: true, lastSeenAt: new Date() },
+        const updated = await prisma.pushInstallation.upsert({
+            where: { adminId_installationId: { adminId: req.admin.id, installationId: resolvedInstallationId } },
+            update: { fcmToken, deviceName, platform, isActive: true, lastSeenAt: new Date(), tokenUpdatedAt: new Date() },
+            create: { adminId: req.admin.id, installationId: resolvedInstallationId, fcmToken, deviceName, platform, tokenUpdatedAt: new Date() },
         });
 
         res.json({ message: 'FCM token registered', device: updated });
     } catch (err) {
-        if (err.code === 'DEVICE_LIMIT_REACHED') {
-            return res.status(403).json({ code: err.code, message: err.message });
-        }
         console.error('Register FCM Token Error:', err);
         res.status(500).json({ error: err.message });
     }
@@ -40,14 +34,14 @@ exports.registerToken = async (req, res) => {
 // DELETE /notifications/remove-token — clears the token (e.g. on logout).
 exports.removeToken = async (req, res) => {
     try {
-        const { deviceId } = req.body;
-        if (!deviceId) {
-            return res.status(400).json({ message: 'deviceId is required' });
+        const installationId = req.body.installationId || req.body.deviceId;
+        if (!installationId) {
+            return res.status(400).json({ message: 'installationId is required' });
         }
 
-        const result = await prisma.device.updateMany({
-            where: { deviceId, shop: { adminId: req.admin.id } },
-            data: { fcmToken: null },
+        const result = await prisma.pushInstallation.updateMany({
+            where: { adminId: req.admin.id, installationId },
+            data: { fcmToken: null, isActive: false },
         });
 
         res.json({ message: 'FCM token removed', count: result.count });
