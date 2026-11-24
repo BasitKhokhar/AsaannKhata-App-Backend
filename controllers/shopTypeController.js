@@ -40,9 +40,20 @@ exports.createShopType = async (req, res) => {
 exports.updateShopType = async (req, res) => {
     try {
         const { id } = req.params;
-        const shopType = await prisma.shopType.update({ where: { id: parseInt(id) }, data: req.body });
+        const numericId = Number.parseInt(id, 10);
+        const { code, label, labelUrdu, description, defaultStockType, suggestedCategories, sortOrder, isActive } = req.body;
+        if (!Number.isSafeInteger(numericId) || numericId < 1) return res.status(400).json({ message: 'Invalid shop type id' });
+        if (typeof label !== 'string' || !label.trim()) return res.status(400).json({ message: 'A label is required' });
+        if (typeof code !== 'string' || !/^[A-Z0-9_]+$/.test(code.trim())) return res.status(400).json({ message: 'Code must use uppercase letters, numbers and underscores' });
+        if (typeof isActive !== 'boolean') return res.status(400).json({ message: 'isActive must be a boolean' });
+        const data = { code: code.trim(), label: label.trim(), labelUrdu: labelUrdu ? String(labelUrdu).trim() : null,
+            description: description ? String(description).trim() : null, defaultStockType, suggestedCategories,
+            sortOrder: Number.isFinite(Number(sortOrder)) ? Number(sortOrder) : 0, isActive };
+        const shopType = await prisma.shopType.update({ where: { id: numericId }, data });
         res.json({ message: 'Shop type updated', shopType });
     } catch (err) {
+        if (err.code === 'P2025') return res.status(404).json({ message: 'Shop type not found' });
+        if (err.code === 'P2002') return res.status(400).json({ message: 'Shop type code already exists' });
         console.error('Update Shop Type Error:', err);
         res.status(500).json({ error: err.message });
     }
