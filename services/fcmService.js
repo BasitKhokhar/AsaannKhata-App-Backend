@@ -12,7 +12,11 @@ async function sendToAdmin(adminId, { title, body, data, notificationId } = {}) 
         const installations = await prisma.pushInstallation.findMany({
             where: { adminId, isActive: true, fcmToken: { not: null } },
         });
-        if (!installations.length) return { sent: 0, accepted: 0, targeted: 0, failed: 0 };
+        console.log('[fcm] Preparing send', { adminId, activeInstallations: installations.length });
+        if (!installations.length) {
+            console.warn('[fcm] No active FCM token found for recipient', { adminId });
+            return { sent: 0, accepted: 0, targeted: 0, failed: 0, reason: 'no-active-token' };
+        }
 
         // FCM's data payload values must all be strings.
         const stringData = Object.fromEntries(
@@ -26,6 +30,17 @@ async function sendToAdmin(adminId, { title, body, data, notificationId } = {}) 
             tokens,
             notification: { title, body },
             data: stringData,
+        });
+
+        const failures = (response.responses || [])
+            .map((result, index) => ({ index, code: result.error?.code || 'unknown-error', message: result.error?.message || null }))
+            .filter((result) => result.code !== 'unknown-error' || result.message);
+        console.log('[fcm] Send completed', {
+            adminId,
+            targeted: tokens.length,
+            accepted: response.successCount || 0,
+            failed: response.failureCount || 0,
+            failures,
         });
 
         // Self-heal stale tokens so we stop retrying them on every future send.
@@ -47,10 +62,11 @@ async function sendToAdmin(adminId, { title, body, data, notificationId } = {}) 
             sent: response.successCount || 0,
             failed: response.failureCount || 0,
             targeted: tokens.length,
+            failures,
         };
     } catch (err) {
-        console.error('fcmService.sendToAdmin error:', err.message);
-        return { sent: 0, error: err.message };
+        console.error('[fcm] Send failed', { adminId, code: err.code || null, message: err.message });
+        return { sent: 0, accepted: 0, targeted: 0, failed: 1, error: err.message, errorCode: err.code || null };
     }
 }
 

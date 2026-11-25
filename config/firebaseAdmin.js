@@ -46,6 +46,9 @@ function ensureInitialized() {
             projectId: process.env.FIREBASE_PROJECT_ID || undefined,
         });
         initialized = true;
+        console.log('[firebaseAdmin] Firebase Admin initialized', {
+            projectId: process.env.FIREBASE_PROJECT_ID || 'service-account-project',
+        });
         return true;
     } catch (err) {
         warnOnce('Failed to initialize Firebase Admin SDK — push notifications are disabled', err);

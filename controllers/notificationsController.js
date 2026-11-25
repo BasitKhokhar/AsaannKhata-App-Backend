@@ -24,6 +24,12 @@ exports.registerToken = async (req, res) => {
             create: { adminId: req.admin.id, installationId: resolvedInstallationId, fcmToken, deviceName, platform, tokenUpdatedAt: new Date() },
         });
 
+        console.log('[notifications] FCM token registered', {
+            adminId: req.admin.id,
+            installationId: resolvedInstallationId,
+            platform,
+            tokenPresent: true,
+        });
         res.json({ message: 'FCM token registered', device: updated });
     } catch (err) {
         console.error('Register FCM Token Error:', err);
@@ -133,6 +139,14 @@ exports.adminSend = async (req, res) => {
     try {
         const { adminId, adminIds, sendToAll, shopId, title, message, type, data } = req.body;
 
+        console.log('[notifications] Admin send requested', {
+            sendToAll: Boolean(sendToAll),
+            adminId: adminId || null,
+            adminIdsCount: Array.isArray(adminIds) ? adminIds.length : 0,
+            shopId: shopId || null,
+            title,
+        });
+
         if (!title || !message) {
             return res.status(400).json({ message: 'title and message are required' });
         }
@@ -178,7 +192,23 @@ exports.adminSend = async (req, res) => {
                 accepted: pushes.reduce((sum, item) => sum + (item.accepted ?? item.sent ?? 0), 0),
                 sent: pushes.reduce((sum, item) => sum + (item.accepted ?? item.sent ?? 0), 0),
                 failed: pushes.reduce((sum, item) => sum + (item.failed || 0), 0),
+                details: pushes.map(({ targeted, accepted, sent, failed, reason, error, errorCode, failures }) => ({
+                    targeted,
+                    accepted,
+                    sent,
+                    failed,
+                    reason,
+                    error,
+                    errorCode,
+                    failures,
+                })),
             },
+        });
+        console.log('[notifications] Admin send completed', {
+            recipientCount: notifications.length,
+            targeted: pushes.reduce((sum, item) => sum + (item.targeted || 0), 0),
+            accepted: pushes.reduce((sum, item) => sum + (item.accepted ?? item.sent ?? 0), 0),
+            failed: pushes.reduce((sum, item) => sum + (item.failed || 0), 0),
         });
     } catch (err) {
         console.error('Admin Send Notification Error:', err);
